@@ -339,7 +339,7 @@ async def test_dealer_locator_indore_depot_lookup(mock_supabase):
         if table_name == "regions":
             mock_table.select.return_value.eq.return_value.execute = mock_regions_execute
         elif table_name == "distributors_active":
-            mock_table.select.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute = mock_distributors_execute
+            mock_table.select.return_value.ilike.return_value.eq.return_value.eq.return_value.limit.return_value.execute = mock_distributors_execute
         return mock_table
         
     mock_supabase.table.side_effect = table_mock_routing

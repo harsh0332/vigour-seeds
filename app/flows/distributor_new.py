@@ -52,7 +52,44 @@ def parse_name(text: str) -> Tuple[str, str]:
         return parts[0].strip(), parts[1].strip()
     return text, text
 
-def parse_location(text: str) -> Optional[Tuple[str, str, str, str]]:
+DISTRICT_HINDI_MAP = {
+    # MP
+    "उज्जैन": "Ujjain",
+    "इंदौर": "Indore",
+    "भोपाल": "Bhopal",
+    "गुना": "Guna",
+    "देवास": "Dewas",
+    "सीहोर": "Sehore",
+    "अशोकनगर": "Ashoknagar",
+    "अशोक नगर": "Ashoknagar",
+    "विदिशा": "Vidisha",
+    # MH
+    "नाशिक": "Nashik",
+    "नासिक": "Nashik",
+    "पुणे": "Pune",
+    "औरंगाबाद": "Aurangabad",
+    "नागपुर": "Nagpur",
+    "अकोला": "Akola",
+    "यवतमाल": "Yavatmal",
+    # RJ
+    "जयपुर": "Jaipur",
+    "कोटा": "Kota",
+    "उदयपुर": "Udaipur",
+    "भीलवाड़ा": "Bhilwara",
+    "श्रीगंगानगर": "Sri Ganganagar",
+    "श्री गंगानगर": "Sri Ganganagar",
+    "हनुमानगढ़": "Hanumangarh",
+    # GJ
+    "अहमदाबाद": "Ahmedabad",
+    "राजकोट": "Rajkot",
+    "जूनागढ़": "Junagadh",
+    "मेहसाणा": "Mehsana",
+    "मेहसाना": "Mehsana",
+    "बनासकांठा": "Banaskantha",
+    "बनास काँठा": "Banaskantha",
+}
+
+async def parse_location(text: str) -> Optional[Tuple[str, str, str, str, str]]:
     cleaned = text.strip()
     
     # 1. Extract Pincode (6 digits)
@@ -63,9 +100,11 @@ def parse_location(text: str) -> Optional[Tuple[str, str, str, str]]:
         
     # 2. Extract State
     matched_state = "Madhya Pradesh"  # default fallback
+    matched_state_key = "Madhya Pradesh"
     for hi_state, eng_state in STATE_HINDI_MAP.items():
         if hi_state in cleaned:
             matched_state = eng_state
+            matched_state_key = hi_state
             cleaned = cleaned.replace(hi_state, "")
             break
             
@@ -73,6 +112,7 @@ def parse_location(text: str) -> Optional[Tuple[str, str, str, str]]:
     for code, full_name in [("MP", "Madhya Pradesh"), ("MH", "Maharashtra"), ("RJ", "Rajasthan"), ("UP", "Uttar Pradesh")]:
         if re.search(rf"\b{code}\b", cleaned, re.IGNORECASE):
             matched_state = full_name
+            matched_state_key = code
             cleaned = re.sub(rf"\b{code}\b", "", cleaned, flags=re.IGNORECASE)
             break
             
@@ -80,15 +120,47 @@ def parse_location(text: str) -> Optional[Tuple[str, str, str, str]]:
     cleaned_parts = [p.strip() for p in re.split(r"[,\s\-]+", cleaned) if p.strip()]
     if len(cleaned_parts) >= 2:
         city = cleaned_parts[0]
-        district = cleaned_parts[1]
+        district_part = cleaned_parts[1]
     elif len(cleaned_parts) == 1:
         city = cleaned_parts[0]
-        district = cleaned_parts[0]
+        district_part = cleaned_parts[0]
     else:
         city = "Indore"
-        district = "Indore"
+        district_part = "Indore"
         
-    return city.title(), district.title(), matched_state, pincode
+    district_raw = district_part
+    district_normalized = district_part
+    
+    # Try mapping
+    lookup_key = re.sub(r"\s+", "", district_part).lower()
+    
+    mapped_english = None
+    for k, v in DISTRICT_HINDI_MAP.items():
+        if re.sub(r"\s+", "", k).lower() == lookup_key or re.sub(r"\s+", "", v).lower() == lookup_key:
+            mapped_english = v
+            break
+            
+    if mapped_english:
+        district_normalized = mapped_english
+    else:
+        # Check Devanagari
+        if bool(re.search(r"[\u0900-\u097F]", district_part)):
+            try:
+                from app.ai.provider import ai_provider
+                system_prompt = (
+                    "You are a transliteration and location normalization assistant. "
+                    "Convert the given Indian district name in Devanagari/Hindi script to standard English spelling "
+                    "(e.g., उज्जैन -> Ujjain, भोपाल -> Bhopal, नाशिक -> Nashik). "
+                    "Return ONLY the single English district name, with no punctuation or extra words."
+                )
+                res = await ai_provider.complete(system_prompt, district_part)
+                res_clean = res.strip().replace(".", "").replace('"', "").replace("'", "")
+                if res_clean and "mock" not in res_clean.lower() and "response" not in res_clean.lower():
+                    district_normalized = res_clean.title()
+            except Exception as e:
+                logger.error("Failed to transliterate district name using AI", extra={"error": str(e)})
+
+    return city.title(), district_normalized.title(), matched_state, pincode, district_raw
 
 def parse_brands(text: str) -> list:
     text_lower = text.strip().lower()
@@ -190,20 +262,22 @@ class NewDistributorFlowHandler:
                 
         elif step == "D_LOCATION":
             text = message.text or ""
-            parsed = parse_location(text)
+            parsed = await parse_location(text)
             if not parsed:
                 await whatsapp_client.send_text(phone, Q2_DIST_INVALID)
                 return
                 
-            city, district, state, pincode = parsed
+            city, district, state, pincode, district_raw = parsed
             collected["city_town"] = city
             collected["district"] = district
+            collected["district_raw"] = district_raw
             collected["state"] = state
             collected["pincode"] = pincode
             
             await session_service.patch_collected(phone, {
                 "city_town": city,
                 "district": district,
+                "district_raw": district_raw,
                 "state": state,
                 "pincode": pincode
             })

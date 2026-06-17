@@ -42,7 +42,44 @@ STATE_HINDI_MAP = {
     "पश्चिमबंगाल": "West Bengal"
 }
 
-def parse_location(text: str, active_states: list) -> Optional[Tuple[str, str]]:
+DISTRICT_HINDI_MAP = {
+    # MP
+    "उज्जैन": "Ujjain",
+    "इंदौर": "Indore",
+    "भोपाल": "Bhopal",
+    "गुना": "Guna",
+    "देवास": "Dewas",
+    "सीहोर": "Sehore",
+    "अशोकनगर": "Ashoknagar",
+    "अशोक नगर": "Ashoknagar",
+    "विदिशा": "Vidisha",
+    # MH
+    "नाशिक": "Nashik",
+    "नासिक": "Nashik",
+    "पुणे": "Pune",
+    "औरंगाबाद": "Aurangabad",
+    "नागपुर": "Nagpur",
+    "अकोला": "Akola",
+    "यवतमाल": "Yavatmal",
+    # RJ
+    "जयपुर": "Jaipur",
+    "कोटा": "Kota",
+    "उदयपुर": "Udaipur",
+    "भीलवाड़ा": "Bhilwara",
+    "श्रीगंगानगर": "Sri Ganganagar",
+    "श्री गंगानगर": "Sri Ganganagar",
+    "हनुमानगढ़": "Hanumangarh",
+    # GJ
+    "अहमदाबाद": "Ahmedabad",
+    "राजकोट": "Rajkot",
+    "जूनागढ़": "Junagadh",
+    "मेहसाणा": "Mehsana",
+    "मेहसाना": "Mehsana",
+    "बनासकांठा": "Banaskantha",
+    "बनास काँठा": "Banaskantha",
+}
+
+async def parse_location(text: str, active_states: list) -> Optional[Tuple[str, str, str]]:
     cleaned = text.lower().strip()
     
     # Match Hindi state names first
@@ -85,7 +122,45 @@ def parse_location(text: str, active_states: list) -> Optional[Tuple[str, str]]:
     if not district_part:
         district_part = "Unknown"
         
-    return matched_state, district_part.title()
+    # Extract raw district from original text
+    district_raw_extracted = pattern.sub("", text)
+    district_raw_extracted = re.sub(r"[,\-\s\(\)]+", " ", district_raw_extracted).strip()
+    if not district_raw_extracted:
+        district_raw_extracted = "Unknown"
+        
+    district_raw = district_raw_extracted
+    district_normalized = district_part
+    
+    # Try mapping
+    lookup_key = re.sub(r"\s+", "", district_part).lower()
+    
+    mapped_english = None
+    for k, v in DISTRICT_HINDI_MAP.items():
+        if re.sub(r"\s+", "", k).lower() == lookup_key or re.sub(r"\s+", "", v).lower() == lookup_key:
+            mapped_english = v
+            break
+            
+    if mapped_english:
+        district_normalized = mapped_english
+    else:
+        # Check Devanagari
+        if bool(re.search(r"[\u0900-\u097F]", district_part)):
+            try:
+                from app.ai.provider import ai_provider
+                system_prompt = (
+                    "You are a transliteration and location normalization assistant. "
+                    "Convert the given Indian district name in Devanagari/Hindi script to standard English spelling "
+                    "(e.g., उज्जैन -> Ujjain, भोपाल -> Bhopal, नाशिक -> Nashik). "
+                    "Return ONLY the single English district name, with no punctuation or extra words."
+                )
+                res = await ai_provider.complete(system_prompt, district_part)
+                res_clean = res.strip().replace(".", "").replace('"', "").replace("'", "")
+                if res_clean and "mock" not in res_clean.lower() and "response" not in res_clean.lower():
+                    district_normalized = res_clean.title()
+            except Exception as e:
+                logger.error("Failed to transliterate district name using AI", extra={"error": str(e)})
+
+    return matched_state, district_normalized.title(), district_raw
 
 def parse_land(text: str) -> Optional[float]:
     match = re.search(r"(\d+(\.\d+)?)", text)
@@ -342,15 +417,20 @@ class FarmerFlowHandler:
                 
         elif step == "F_LOCATION":
             active_states = await get_active_states()
-            parsed = parse_location(message.text or "", active_states)
+            parsed = await parse_location(message.text or "", active_states)
             if not parsed:
                 await whatsapp_client.send_text(phone, Q2_INVALID)
                 return
                 
-            state, district = parsed
+            state, district, district_raw = parsed
             collected["state"] = state
             collected["district"] = district
-            await session_service.patch_collected(phone, {"state": state, "district": district})
+            collected["district_raw"] = district_raw
+            await session_service.patch_collected(phone, {
+                "state": state,
+                "district": district,
+                "district_raw": district_raw
+            })
             
             await session_service.set_step(phone, "F_LAND")
             await whatsapp_client.send_text(phone, Q3_LAND)

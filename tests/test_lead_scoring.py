@@ -148,6 +148,7 @@ async def test_new_distributor_flow_hot_path(mock_notify, mock_leads_repo, mock_
     mock_sess_service.patch_collected.assert_called_with("919999999999", {
         "city_town": "Indore",
         "district": "Indore",
+        "district_raw": "Indore",
         "state": "Madhya Pradesh",
         "pincode": "452001"
     })

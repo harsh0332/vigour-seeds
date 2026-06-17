@@ -105,7 +105,7 @@ async def test_farmer_flow_location(mock_get_states, mock_client):
         
         await farmer_flow_handler.handle_message(msg_valid, session)
         
-        mock_sess_service.patch_collected.assert_called_once_with("919999999999", {"state": "Madhya Pradesh", "district": "गुना"})
+        mock_sess_service.patch_collected.assert_called_once_with("919999999999", {"state": "Madhya Pradesh", "district": "Guna", "district_raw": "गुना"})
         mock_sess_service.set_step.assert_called_once_with("919999999999", "F_LAND")
 
 @pytest.mark.asyncio

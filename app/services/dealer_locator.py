@@ -37,15 +37,14 @@ class DealerLocatorService:
 
         try:
             # Query up to 2 active dealers in the same district and state
-            # Match state name or state code
-            query = supabase_client.table("distributors_active") \
+            # Match state name or state code, match district case-insensitively (ilike)
+            res_dealers = supabase_client.table("distributors_active") \
                 .select("distributor_id, shop_name, contact_name, whatsapp_phone") \
-                .eq("district", district) \
-                .eq("active_status", "active")
-            
-            res_dealers = query.eq("state", state).limit(2).execute()
-            if not res_dealers.data:
-                res_dealers = query.eq("state", state).limit(2).execute() # Retry standard
+                .ilike("district", district) \
+                .eq("active_status", "active") \
+                .eq("state", state) \
+                .limit(2) \
+                .execute()
                 
             if res_dealers.data:
                 result["dealers"] = res_dealers.data

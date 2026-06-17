@@ -55,7 +55,7 @@ async def test_journey_a_farmer_pest_photo_reco_dealer():
     assert "ज़िले और राज्य" in mock_whatsapp_client.sent_messages[-1]["body"]
 
     # 3. Send Location
-    await send_msg(phone, "Ujjain, मध्य प्रदेश")
+    await send_msg(phone, "उज्जैन, मध्य प्रदेश")
     session = await sessions_repo.get(phone)
     assert session.current_step == "F_LAND"
     assert "ज़मीन" in mock_whatsapp_client.sent_messages[-1]["body"]
@@ -101,6 +101,7 @@ async def test_journey_a_farmer_pest_photo_reco_dealer():
     # Lead should be qualified and saved in database
     lead = await leads_repo.get_farmer(phone)
     assert lead is not None
+    assert lead.district == "Ujjain"
     assert lead.lead_status == "recommendation_sent"
     assert lead.photo_ai_confidence == 0.8
     assert lead.photo_ai_diagnosis == "pest_attack"
