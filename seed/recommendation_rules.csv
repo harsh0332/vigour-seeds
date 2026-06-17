@@ -1,0 +1,20 @@
+rule_id,crop,crop_stage,problem_category,irrigation_type,region,recommended_product_ids,next_action,human_review_required,notes
+R001,Soybean,sowing,-,Rainfed/Irrigated,"MP, MH, RJ","SBN001, SBN002, SBN004",send_recommendation,N,Standard kharif soybean — recommend 2-3 options based on duration preference
+R002,Soybean,sowing,high_disease_pressure,Rainfed/Irrigated,"MP, MH, RJ","SBN003, SBN006",send_recommendation,N,For YMV/Rust prone areas → resistant varieties
+R003,Soybean,flowering,pest_attack,Any,Any,-,escalate_agronomist,Y,"Mid-stage pest issue — need agronomist diagnosis, do not recommend new variety mid-crop"
+R004,Soybean,maturity,-,Any,Any,SBN005,send_recommendation,N,For next season: VIGOUR KARISHMA 999 (no shattering — late harvest insurance)
+R010,Wheat,sowing,-,Irrigated,"MP, UP, RJ","WHT001, WHT003",send_recommendation,N,Standard rabi wheat — quality + yield balance
+R011,Wheat,sowing,karnal_bunt_smut,Irrigated,"MP, UP, PB, HR",WHT002,send_recommendation,N,For Karnal bunt / smut endemic areas
+R020,Paddy,sowing,-,Irrigated,"CG, MP, OD","PDY001, PDY004",send_recommendation,N,Standard kharif paddy
+R021,Paddy,sowing,bacterial_leaf_blight,Irrigated,"CG, MP, OD","PDY004, PDY008, PDY009",send_recommendation,N,BLB-tolerant lines
+R022,Paddy,sowing,premium_market,Irrigated,"CG, MP, OD, UP","PDY006, PDY009",send_recommendation,N,Long/extra-fine grain for premium markets
+R030,Maize,sowing,-,Rainfed/Irrigated,"MP, RJ, GJ","MZE001, MZE002",send_recommendation,N,Standard kharif/rabi
+R031,Maize,sowing,drought_prone,Rainfed,"MP, RJ, GJ",MZE001,send_recommendation,N,VIGOUR 60A90 — drought tolerant + TLB tolerant
+R040,Chickpea (Chana),sowing,-,Rainfed,"MP, RJ, MH","GRM003, GRM005",send_recommendation,N,Standard rabi chana
+R050,Okra,sowing,ymvm_olcv_endemic,Irrigated,"MP, UP, MH, GJ",OKR003,send_recommendation,N,VIGOUR DIVYA — highly tolerant
+R060,Tomato,sowing,long_distance_market,Irrigated,"MP, MH, KA","TOM004, TOM005",send_recommendation,N,Excellent keeping quality varieties
+R070,Hot Pepper (Chilli),sowing,red_dry_market,Irrigated,"AP, TG, KA","HPP004, HPP005, HPP006, HPP009",send_recommendation,N,Red dry chilli — high pungent
+R071,Hot Pepper (Chilli),sowing,fresh_green_market,Irrigated,"AP, TG, KA, MH","HPP001, HPP002",send_recommendation,N,Parrot green fresh segment
+R900,Any,Any,unclear_problem,Any,Any,-,ask_for_photo,N,"If problem unclear, request crop photo before recommending"
+R901,Any,Any,low_ai_confidence,Any,Any,-,escalate_agronomist,Y,When AI photo confidence < 0.6
+R902,Any,Any,safety_critical,Any,Any,-,escalate_agronomist,Y,"Anything involving chemical dosage, severe disease, or major loss"

@@ -1,0 +1,16 @@
+region_id,state,state_code,priority_districts,nearest_depot,depot_address,sales_rep_name,sales_rep_phone,agronomist_name,agronomist_phone,is_active
+RG001,Madhya Pradesh,MP,"Indore, Bhopal, Ujjain, Dewas, Sehore, Guna, Ashoknagar, Vidisha",Indore Depot (HO),"308 Apollo Premier, Vijay Nagar, Indore-452010",TBD - Vigour Sales,TBD,TBD - Vigour Agronomy,TBD,Y
+RG002,Maharashtra,MH,"Nashik, Pune, Aurangabad, Nagpur, Akola, Yavatmal",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG003,Rajasthan,RJ,"Jaipur, Kota, Udaipur, Bhilwara, Sri Ganganagar, Hanumangarh",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG004,Gujarat,GJ,"Ahmedabad, Rajkot, Junagadh, Mehsana, Banaskantha",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG005,Uttar Pradesh,UP,"Lucknow, Kanpur, Bareilly, Meerut, Agra, Varanasi",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG006,Chhattisgarh,CG,"Raipur, Bilaspur, Durg, Rajnandgaon",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG007,Karnataka,KA,"Bangalore Rural, Mysore, Belgaum, Dharwad, Raichur",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG008,Andhra Pradesh,AP,"Guntur, Kurnool, Anantapur, Chittoor, Krishna",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG009,Telangana,TG,"Warangal, Khammam, Karimnagar, Mahbubnagar",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG010,Bihar,BR,"Patna, Gaya, Muzaffarpur, Bhagalpur",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG011,Odisha,OD,"Bhubaneswar, Cuttack, Sambalpur, Berhampur",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG012,Punjab,PB,"Ludhiana, Amritsar, Bathinda, Patiala",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG013,Haryana,HR,"Hisar, Karnal, Sirsa, Rohtak",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG014,Tamil Nadu,TN,"Coimbatore, Salem, Madurai, Erode",TBD,TBD,TBD,TBD,TBD,TBD,Y
+RG015,West Bengal,WB,"Bardhaman, Hooghly, Nadia, Murshidabad",TBD,TBD,TBD,TBD,TBD,TBD,Y

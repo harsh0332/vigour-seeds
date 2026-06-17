@@ -1,0 +1,74 @@
+services:
+  # 1. Main Web Service
+  - type: web
+    name: vigour-seeds-backend
+    env: docker
+    plan: free # or standard depending on budget
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: AI_PROVIDER
+        value: gemini
+      # Placeholders for keys to be set manually in Render Dashboard
+      - key: META_VERIFY_TOKEN
+        sync: false
+      - key: META_WHATSAPP_TOKEN
+        sync: false
+      - key: META_PHONE_NUMBER_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+  # 2. Cron Worker Service
+  - type: cron
+    name: vigour-seeds-cron-worker
+    env: docker
+    plan: free
+    schedule: "*/30 * * * *"
+    startCommand: "PYTHONPATH=. python worker/scheduler.py"
+    envVars:
+      - fromService:
+          type: web
+          name: vigour-seeds-backend
+          envVarKey: APP_ENV
+      - fromService:
+          type: web
+          name: vigour-seeds-backend
+          envVarKey: AI_PROVIDER
+      - fromService:
+          type: web
+          name: vigour-seeds-backend
+          envVarKey: META_VERIFY_TOKEN
+      - fromService:
+          type: web
+          name: vigour-seeds-backend
+          envVarKey: META_WHATSAPP_TOKEN
+      - fromService:
+          type: web
+          name: vigour-seeds-backend
+          envVarKey: META_PHONE_NUMBER_ID
+      - fromService:
+          type: web
+          name: vigour-seeds-backend
+          envVarKey: META_APP_SECRET
+      - fromService:
+          type: web
+          name: vigour-seeds-backend
+          envVarKey: SUPABASE_URL
+      - fromService:
+          type: web
+          name: vigour-seeds-backend
+          envVarKey: SUPABASE_SERVICE_KEY
+      - fromService:
+          type: web
+          name: vigour-seeds-backend
+          envVarKey: GEMINI_API_KEY
+

@@ -1,0 +1,36 @@
+crop_id,crop_category,crop_name_en,crop_name_hi,season,primary_states,whatsapp_button_label,in_catalog
+CR01,Field Crop,Soybean,सोयाबीन,Kharif,"MP, MH, RJ",सोयाबीन,Y
+CR02,Field Crop,Maize / Corn,मक्का,Kharif & Rabi,"MP, RJ, GJ, AP",मक्का,Y
+CR03,Field Crop,Paddy / Rice,धान / चावल,Kharif & Rabi,"CG, MP, OD, BR, UP",धान,Y
+CR04,Field Crop,Wheat,गेहूं,Rabi,"MP, UP, PB, HR, RJ",गेहूं,Y
+CR05,Field Crop,Bajra (Pearl Millet),बाजरा,Kharif & Rabi,"RJ, GJ, MH, MP",बाजरा,Y
+CR06,Field Crop,Sunflower,सूरजमुखी,Rabi/Summer,"KA, AP, MH",सूरजमुखी,Y
+CR07,Field Crop,Chickpea (Chana),चना,Rabi,"MP, RJ, MH, KA, UP",चना,Y
+CR08,Field Crop,Tur (Arhar),अरहर / तुर,Kharif,"MH, KA, MP, UP",अरहर,Y
+CR09,Field Crop,Green Gram (Moong),मूंग,Kharif/Summer,"MP, RJ, MH",मूंग,Y
+CR10,Field Crop,Black Gram (Urad),उड़द,Kharif/Summer,"MP, MH, AP",उड़द,Y
+CR11,Field Crop,Mustard,सरसों,Rabi,"RJ, MP, HR, UP",सरसों,Y
+CR12,Field Crop,Sorghum (Jowar),ज्वार,Kharif & Rabi,"MH, KA, MP, AP",ज्वार,Y
+CR13,Field Crop,Cumin (Jeera),जीरा,Rabi,"GJ, RJ",जीरा,Y
+CR14,Field Crop,Sesame (Til),तिल,Kharif/Summer,"MP, RJ, GJ",तिल,Y
+CR15,Vegetable,Okra (Bhindi),भिंडी,Kharif/Summer,"MP, UP, MH, GJ",भिंडी,Y
+CR16,Vegetable,Tomato,टमाटर,Kharif/Rabi,"MP, MH, KA, AP",टमाटर,Y
+CR17,Vegetable,Hot Pepper (Mirchi),मिर्ची,Kharif/Rabi,"AP, TG, KA, MH",मिर्ची,Y
+CR18,Vegetable,Brinjal (Baingan),बैंगन,Kharif/Rabi,"WB, OD, MH, MP",बैंगन,Y
+CR19,Vegetable,Bitter Gourd (Karela),करेला,Kharif/Summer,"UP, BR, MP, MH",करेला,Y
+CR20,Vegetable,Bottle Gourd (Lauki),लौकी,Kharif/Summer,"UP, BR, MP",लौकी,Y
+CR21,Vegetable,Ridge Gourd (Turai),तुरई,Kharif/Summer,"UP, BR, MP",तुरई,Y
+CR22,Vegetable,Sponge Gourd,गिल्की,Kharif/Summer,"UP, BR, MP",गिल्की,Y
+CR23,Vegetable,Watermelon (Tarbooj),तरबूज,Summer,"AP, MH, GJ, TN",तरबूज,Y
+CR24,Vegetable,Muskmelon (Kharbuja),खरबूजा,Summer,"UP, RJ, MP",खरबूजा,Y
+CR25,Vegetable,Cucumber (Kheera),खीरा,Summer/Rabi,"UP, MP, MH",खीरा,Y
+CR26,Vegetable,Cauliflower,फूलगोभी,Rabi,"WB, BR, OD, UP",फूलगोभी,Y
+CR27,Vegetable,Cabbage,पत्ता गोभी,Rabi,"WB, BR, OD, UP",पत्ता गोभी,Y
+CR28,Vegetable,Pumpkin (Kaddu),कद्दू,Kharif/Summer,"UP, BR, MP",कद्दू,Y
+CR29,Vegetable,Capsicum (Shimla Mirch),शिमला मिर्च,Rabi,"KA, MH, MP",शिमला मिर्च,Y
+CR30,Vegetable,Onion (Pyaz),प्याज,Rabi/Kharif,"MH, MP, KA",प्याज,Y
+CR31,Vegetable,Radish (Mooli),मूली,Rabi,"WB, BR, OD",मूली,Y
+CR32,Vegetable,Beans,बीन्स,Kharif/Rabi,"KA, MH, MP",बीन्स,Y
+CR33,Vegetable,Sweet Corn / Peas / Gawar,मीठी मक्का / मटर / ग्वार,Rabi/Summer,"MP, MH, RJ",अन्य,Y
+CR34,Vegetable,Coriander / Spinach / Methi,धनिया / पालक / मेथी,Rabi,"RJ, MP, GJ",हरी सब्जी,Y
+CR99,Other,Other / Not in catalog,अन्य,Any,Any,अन्य फसल,N
