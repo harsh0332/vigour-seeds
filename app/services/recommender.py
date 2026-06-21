@@ -86,7 +86,7 @@ class RecommenderService:
             
         irrigation = "Irrigated" if collected.get("total_land") else "Rainfed" # inferred default
         state_code = get_state_code(collected.get("state", "Madhya Pradesh"))
-        print(f"\nDEBUG RESOLVE: crop={canonical_crop}, stage={stage}, problem={primary_prob}, irrigation={irrigation}, region={state_code}")
+        logger.debug(f"DEBUG RESOLVE: crop={canonical_crop}, stage={stage}, problem={primary_prob}, irrigation={irrigation}, region={state_code}")
         logger.info(
             "Resolving recommendation rule",
             extra={
