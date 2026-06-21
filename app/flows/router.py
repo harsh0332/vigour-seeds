@@ -272,6 +272,15 @@ class ConversationRouter:
 
         # Handle free text via Intent Classifier
         if message.text:
+            text_clean = (message.text or "").strip().lower()
+            if text_clean in ["hi", "hello", "hey", "नमस्ते", "start"]:
+                await sessions_repo.upsert(phone, {
+                    "current_flow": None,
+                    "current_step": "start"
+                })
+                await whatsapp_client.send_buttons(phone, WELCOME_BODY, WELCOME_BUTTONS)
+                return
+
             intent_res = await classify_intent(message.text)
             intent = intent_res.get("intent")
             confidence = intent_res.get("confidence", 0.0)

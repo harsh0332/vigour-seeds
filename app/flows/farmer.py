@@ -283,6 +283,7 @@ async def save_farmer_lead(phone: str, collected: dict) -> None:
         "next_action": collected.get("next_action"),
         "source_channel": collected.get("source_channel", "whatsapp_organic"),
         "utm_campaign": collected.get("utm_campaign"),
+        "notes_internal": collected.get("notes_internal") or (f"District Raw: {collected.get('district_raw')}" if collected.get("district_raw") else None),
         "last_message_at": datetime.utcnow().isoformat()
     }
     
