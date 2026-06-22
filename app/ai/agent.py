@@ -118,7 +118,7 @@ async def get_conversation_history(phone: str, limit: int = 15) -> List[Dict[str
             lambda: supabase_client.table("conversations")
             .select("direction, message_text, button_payload, created_at")
             .eq("whatsapp_phone", phone)
-            .order("created_at", descending=True)
+            .order("created_at", desc=True)
             .limit(limit)
             .execute()
         )
@@ -126,7 +126,11 @@ async def get_conversation_history(phone: str, limit: int = 15) -> List[Dict[str
         history.reverse()
         return history
     except Exception as e:
-        logger.error("Failed to fetch conversation history", extra={"phone": phone, "error": str(e)})
+        logger.error(
+            "Failed to fetch conversation history",
+            extra={"phone": phone, "error": str(e)},
+            exc_info=True
+        )
         return []
 
 async def find_crop_by_name(name: str) -> Optional[Any]:

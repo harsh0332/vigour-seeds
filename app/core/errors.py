@@ -34,7 +34,7 @@ class AICircuitBreakerOpenException(Exception):
 # --- Circuit Breaker ---
 
 class CircuitBreaker:
-    def __init__(self, failure_threshold: int = 3, recovery_timeout: float = 30.0):
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 15.0):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.failure_count = 0
