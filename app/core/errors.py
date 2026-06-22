@@ -108,7 +108,8 @@ async def retry_with_backoff(
             
             logger.warning(
                 "Request failed. Retrying...",
-                extra={"attempt": attempt + 1, "next_retry_in": sleep_time, "error": str(e)}
+                extra={"attempt": attempt + 1, "next_retry_in": sleep_time, "error": str(e)},
+                exc_info=True
             )
             await asyncio.sleep(sleep_time)
 
