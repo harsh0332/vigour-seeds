@@ -426,20 +426,29 @@ async def respond(phone: str, message: NormalizedMessage) -> str:
     turn_messages = [f"User: {user_input}"]
     
     loop_count = 0
-    max_loops = 5
+    max_loops = 3
     last_error_reprompted = False
 
     while loop_count < max_loops:
         user_prompt = "\n".join(turn_messages)
         
         try:
-            raw_response = await ai_provider.complete(
+            from app.core.errors import retry_with_backoff
+            raw_response = await retry_with_backoff(
+                ai_provider.complete,
                 system=system_instruction,
                 user=user_prompt,
-                json_mode=True
+                json_mode=True,
+                attempts=3,
+                base_delay=1.0,
+                max_delay=5.0
             )
         except Exception as e:
-            logger.error("Agent complete call failed", extra={"phone": phone, "error": str(e)})
+            logger.error(
+                "Agent complete call failed",
+                extra={"phone": phone, "error": str(e)},
+                exc_info=True
+            )
             return "तकनीकी समस्या आई है 🙏 कृपया थोड़ी देर बाद पुनः प्रयास करें।"
 
         cleaned_response = clean_json_text(raw_response)
