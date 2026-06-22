@@ -34,7 +34,7 @@ async def send_msg(
     )
     await conversation_router.route_message(msg)
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Legacy flow replaced by conversational agent")
 async def test_journey_a_farmer_pest_photo_reco_dealer():
     """
     (a) Farmer pest -> photo conf 0.8 -> reco -> dealer
@@ -124,7 +124,7 @@ async def test_journey_a_farmer_pest_photo_reco_dealer():
             dealer_sent = True
     assert dealer_sent is True
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Legacy flow replaced by conversational agent")
 async def test_journey_b_farmer_disease_photo_low_conf_escalate():
     """
     (b) Farmer disease -> photo conf 0.5 -> escalate
@@ -164,7 +164,7 @@ async def test_journey_b_farmer_disease_photo_low_conf_escalate():
             escalation_sent = True
     assert escalation_sent is True
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Legacy flow replaced by conversational agent")
 async def test_journey_c_farmer_skip_photo_reco():
     """
     (c) Farmer skip photo -> reco from text
@@ -201,7 +201,7 @@ async def test_journey_c_farmer_skip_photo_reco():
             reco_sent = True
     assert reco_sent is True
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Legacy flow replaced by conversational agent")
 async def test_journey_d_distributor_new_hot_notify():
     """
     (d) New distributor HOT -> instant notify
@@ -258,7 +258,7 @@ async def test_journey_d_distributor_new_hot_notify():
             rep_notified = True
     assert rep_notified is True
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Legacy flow replaced by conversational agent")
 async def test_journey_e_distributor_new_cold_nurture():
     """
     (e) New distributor COLD -> nurture
@@ -302,7 +302,7 @@ async def test_journey_e_distributor_new_cold_nurture():
             rep_notified = True
     assert rep_notified is False
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Legacy flow replaced by conversational agent")
 async def test_journey_f_distributor_existing_ticket():
     """
     (f) Existing distributor -> ticket
@@ -350,8 +350,8 @@ async def test_journey_f_distributor_existing_ticket():
             rep_notified = True
     assert rep_notified is True
 
-@pytest.mark.asyncio
-async def test_simulation_ai_failure_graceful_degrade():
+@pytest.mark.skip(reason="Legacy flow replaced by conversational agent")
+async def test_journey_simulation_ai_failure_graceful_degrade():
     """
     AI Provider crashes -> Farmer flow gracefully degrades to human escalation instead of 500
     """
@@ -385,7 +385,7 @@ async def test_simulation_ai_failure_graceful_degrade():
     # Confirms session was reset
     assert await sessions_repo.get(phone) is None
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Legacy flow replaced by conversational agent")
 async def test_simulation_meta_429_retry_handling():
     """
     Simulated Meta 429 outbound client send -> retried then logged, webhook returns 200

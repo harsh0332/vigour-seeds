@@ -156,7 +156,16 @@ async def handle_general_flow_stub(message: ParsedMessage, session: Any) -> None
 class ConversationRouter:
     async def route_message(self, message: ParsedMessage) -> None:
         phone = message.from_phone
-        session = await session_service.get_or_create(phone)
+        
+        # Conversational AI Agent (brain architecture)
+        from app.ai.agent import respond
+        try:
+            response_text = await respond(phone, message)
+            await whatsapp_client.send_text(phone, response_text)
+        except Exception as e:
+            logger.error("Failed executing Conversational Agent respond", extra={"phone": phone, "error": str(e)})
+            await whatsapp_client.send_text(phone, "तकनीकी समस्या आई है 🙏 कृपया थोड़ी देर बाद पुनः प्रयास करें।")
+        return
 
         # Intercept catalog crop selection list replies
         if message.type == "list_reply" and message.list_id and message.list_id.startswith("CATALOG_CROP_"):

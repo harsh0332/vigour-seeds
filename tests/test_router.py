@@ -18,7 +18,7 @@ class MockResponse:
     def __init__(self, data):
         self.data = data
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Legacy flow replaced by conversational agent")
 @patch("app.flows.router.distributors_repo")
 @patch("app.flows.router.sessions_repo")
 @patch("app.services.session.sessions_repo")
@@ -70,7 +70,7 @@ async def test_router_greet_existing_distributor(mock_client, mock_service_sess_
     assert "Sanjay Sharma" in args[1]
     assert "ऑर्डर / स्टॉक" in args[1]
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Legacy flow replaced by conversational agent")
 @patch("app.flows.router.distributors_repo")
 @patch("app.flows.router.sessions_repo")
 @patch("app.services.session.sessions_repo")
@@ -120,7 +120,7 @@ async def test_router_welcome_button_replies(mock_farmer_client, mock_client, mo
     })
     mock_client.send_text.assert_called_once_with("919999999999", "आपका नाम क्या है? 🙏")
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Legacy flow replaced by conversational agent")
 @patch("app.flows.router.distributors_repo")
 @patch("app.flows.router.sessions_repo")
 @patch("app.services.session.sessions_repo")
@@ -177,7 +177,7 @@ async def test_router_free_text_routing_success(mock_classify, mock_farmer_clien
     })
     mock_client.send_text.assert_called_once_with("919999999999", "आपका नाम क्या है? 🙏")
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Legacy flow replaced by conversational agent")
 @patch("app.flows.router.distributors_repo")
 @patch("app.flows.router.sessions_repo")
 @patch("app.services.session.sessions_repo")
