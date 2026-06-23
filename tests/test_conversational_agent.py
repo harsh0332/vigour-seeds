@@ -1032,3 +1032,151 @@ async def test_conversational_repetition_and_short_messages():
     assert any(term in last_msg4 for term in ["मदद", "खुशी", "बात"])
     assert last_msg3 != last_msg4
 
+
+@pytest.mark.asyncio
+async def test_conversational_unclear_and_out_of_scope():
+    """
+    Test Scenario:
+    1. Unclear/gibberish message -> returns a polite clarification request.
+    2. Second unclear/gibberish message -> returns a DIFFERENT clarification request.
+    3. Third unclear/gibberish message -> concrete next step fallback (asks for crop).
+    4. Out-of-scope message (PM-Kisan) -> honest "no reliable info" reply and steers back.
+    5. Out-of-scope message (Mandi prices) -> honest "no reliable info" reply, steers back, and is different from the previous.
+    6. Chemical dosage query -> safety warning, steers back.
+    """
+    phone = "919000000036"
+    await sessions_repo.delete(phone)
+    
+    # Initialize session
+    await sessions_repo.upsert(phone, {
+        "current_step": "STEP_1",
+        "collected_json": {
+            "greeted": True,
+            "name": "Harsh"
+        }
+    })
+    
+    # -- Turn 1: Gibberish message --
+    mock_responses = make_mock_complete(
+        {"is_unclear": True, "out_of_scope_topic": None, "asks_chemical_dosage": False},
+        "..."
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.gibberish1",
+            from_phone=phone,
+            type="text",
+            text="asdfgh",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("clarify_attempts") == 1
+        
+        last_msg1 = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Harsh" in last_msg1 or "हर्ष" in last_msg1
+        assert any(term in last_msg1 for term in ["समझ", "बताएँगे", "खुलकर"])
+
+    # -- Turn 2: Second Gibberish message --
+    mock_responses = make_mock_complete(
+        {"is_unclear": True, "out_of_scope_topic": None, "asks_chemical_dosage": False},
+        "..."
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.gibberish2",
+            from_phone=phone,
+            type="text",
+            text="qwerty",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("clarify_attempts") == 2
+        
+        last_msg2 = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert last_msg1 != last_msg2  # Must vary and not repeat!
+
+    # -- Turn 3: Third Gibberish message -> Falls back to concrete step --
+    mock_responses = make_mock_complete(
+        {"is_unclear": True, "out_of_scope_topic": None, "asks_chemical_dosage": False},
+        "..."
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.gibberish3",
+            from_phone=phone,
+            type="text",
+            text="zxcvb",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("clarify_attempts") == 0
+        
+        last_msg3 = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "फसल" in last_msg3
+
+    # -- Turn 4: Out-of-scope (PM Kisan) --
+    mock_responses = make_mock_complete(
+        {"is_unclear": False, "out_of_scope_topic": "government scheme", "asks_chemical_dosage": False},
+        "..."
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.out1",
+            from_phone=phone,
+            type="text",
+            text="PM kisan yojana kitna paisa milega?",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        last_msg4 = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert any(term in last_msg4 for term in ["पक्की जानकारी", "विश्वसनीय जानकारी", "सटीक डेटा"])
+        # Steers back
+        assert any(term in last_msg4 for term in ["मदद", "सहायता", "बीज", "फसल"])
+
+    # -- Turn 5: Out-of-scope (Mandi price) --
+    mock_responses = make_mock_complete(
+        {"is_unclear": False, "out_of_scope_topic": "mandi price", "asks_chemical_dosage": False},
+        "..."
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.out2",
+            from_phone=phone,
+            type="text",
+            text="aaj ka wheat mandi bhav kya hai?",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        last_msg5 = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert any(term in last_msg5 for term in ["पक्की जानकारी", "विश्वसनीय जानकारी", "सटीक डेटा"])
+        assert last_msg4 != last_msg5  # Must vary!
+
+    # -- Turn 6: Chemical dosage query --
+    mock_responses = make_mock_complete(
+        {"is_unclear": False, "out_of_scope_topic": None, "asks_chemical_dosage": True},
+        "..."
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.dosage1",
+            from_phone=phone,
+            type="text",
+            text="monocrotophos spray quantity details?",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        last_msg6 = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert any(term in last_msg6 for term in ["छिड़काव मात्रा", "सटीक मात्रा", "छिड़काव"])
+        assert any(term in last_msg6 for term in ["डीलर", "कृषि अधिकारी", "कृषि केंद्र", "स्थानीय"])
+        assert any(term in last_msg6 for term in ["बीज", "उत्पाद", "फसल"])
+
+

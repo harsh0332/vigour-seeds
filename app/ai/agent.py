@@ -115,6 +115,11 @@ Fields to extract:
 - crop: The crop name mentioned (e.g., "makka", "dhan", "soyabean", "dhaniya"). IMPORTANT: If the user mentions a new/different crop than the current profile, extract it.
 - problem: The crop problem description (e.g. "पत्ते पीले", "कीड़े", "रोग", "बढ़वार नहीं"). IMPORTANT: If the user mentions a new/different problem than the current profile, extract it.
 
+Classification flags to extract:
+- is_unclear: boolean (true if the message is gibberish, completely ambiguous, or off-topic chatter like "aur kya chal raha hai").
+- out_of_scope_topic: string or null (set to a short description like "mandi price", "government scheme", "loan", "insurance" if the user is asking about government schemes, bank loans, insurance, live mandi prices, or other out-of-scope agricultural topics).
+- asks_chemical_dosage: boolean (true if the user is asking for specific chemical pesticide/fungicide names or exact spray dosages).
+
 Current Profile Status (Do not overwrite name, location, land, water unless corrected, but ALWAYS extract any new crop or crop problem mentioned in the latest message):
 {profile_status}
 
@@ -126,7 +131,7 @@ Conversation History:
 
 IMPORTANT:
 - Return ONLY a valid JSON object. Do not include markdown fences, comments, or extra text.
-- If a field is not present in the message and not already in the profile, set it to null.
+- If a field is not present in the message and not already in the profile, set it to null (or false for booleans).
 - Do not invent any values. Only extract what is clearly in the user's message.
 - If the user explicitly corrects a previously set value, update it. Otherwise, preserve the current profile value.
 
@@ -138,7 +143,10 @@ JSON Format:
   "land_size": string or null,
   "water_source": string or null,
   "crop": string or null,
-  "problem": string or null
+  "problem": string or null,
+  "is_unclear": boolean,
+  "out_of_scope_topic": string or null,
+  "asks_chemical_dosage": boolean
 }}"""
 
 PHRASING_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour Seeds कंपनी के एक अनुभवी और भरोसेमंद कृषि सहायक। Vigour Seeds एक
@@ -330,6 +338,91 @@ def detect_and_handle_short_or_help(text: str, farmer_name: str, last_reply: str
         ]
         return random.choice([o for o in options if o != last_reply])
 
+    return None
+
+def handle_unclear_or_out_of_scope(extracted: dict, collected: dict, last_reply: str) -> str:
+    import random
+    import re
+    
+    farmer_name = collected.get("name") or "किसान भाई"
+    
+    history_sent = collected.get("sent_messages_history", [])
+    last_3_sent = [s.strip() for s in history_sent[-3:]] if history_sent else []
+    
+    def get_similarity(s1: str, s2: str) -> float:
+        from difflib import SequenceMatcher
+        clean1 = re.sub(r"[,\-\s\(\)\.\?।!]+", "", s1.lower())
+        clean2 = re.sub(r"[,\-\s\(\)\.\?।!]+", "", s2.lower())
+        if not clean1 and not clean2:
+            return 1.0
+        if not clean1 or not clean2:
+            return 0.0
+        return SequenceMatcher(None, clean1, clean2).ratio()
+
+    def choose_varied_option(options: list) -> str:
+        filtered = [
+            o for o in options 
+            if o.strip() not in last_3_sent 
+            and not any(get_similarity(o, old) > 0.8 for old in last_3_sent)
+            and o.strip() != last_reply.strip()
+        ]
+        if filtered:
+            return random.choice(filtered)
+        return random.choice(options)
+    
+    # 1. Out of scope queries (PM-Kisan, Mandi price, loan, insurance, government schemes, legal)
+    out_of_scope = extracted.get("out_of_scope_topic")
+    if out_of_scope:
+        # Reset clarify attempts
+        collected["clarify_attempts"] = 0
+        
+        options = [
+            f"किसान भाई {farmer_name}, सरकारी योजनाओं या मंडी भाव के बारे में मेरे पास पक्की जानकारी नहीं है। लेकिन मैं आपकी फसल, कीड़े-बीमारी, खाद-पानी या बीज से जुड़ी समस्या में मदद कर सकता हूँ। अभी आपकी फसल में क्या दिक्कत है?",
+            f"माफ़ कीजिएगा {farmer_name} भाई, बैंक लोन, बीमा या मंडी कीमतों के बारे में मेरे पास विश्वसनीय जानकारी नहीं है। लेकिन मैं फसल की बीमारी पहचानने, खाद-दवा की जानकारी देने और सही Vigour बीज चुनने में आपकी मदद कर सकता हूँ। आपकी कौन सी फसल है?",
+            f"प्रिय {farmer_name}, इस विषय पर मेरे पास सटीक डेटा नहीं है। मैं मुख्य रूप से कीट-बीमारी के निदान, खाद-पानी के उपयोग और बेहतर पैदावार के लिए सही बीजों की सिफारिश में मदद करता हूँ। क्या आपकी फसल में कोई समस्या आ रही है?"
+        ]
+        return choose_varied_option(options)
+
+    # 2. Asks for chemical pesticide name/dosage not in our product data
+    if extracted.get("asks_chemical_dosage"):
+        # Reset clarify attempts
+        collected["clarify_attempts"] = 0
+        
+        options = [
+            f"किसान भाई {farmer_name}, विशिष्ट रासायनिक दवाओं की सटीक छिड़काव मात्रा के बारे में मैं पक्की सलाह नहीं दे सकता। सही दवा और मात्रा के लिए कृपया अपने नज़दीकी कृषि डीलर या कृषि अधिकारी से ज़रूर पुष्टि करें। क्या हम कीट प्रतिरोधी किस्मों या बीजों की बात करें?",
+            f"माफ़ कीजिएगा {farmer_name} भाई, दवाइयों की सटीक मात्रा और नाम के लिए अपने स्थानीय कृषि केंद्र या डीलर से संपर्क करें। मैं आपकी फसल के लिए कीट और रोग प्रतिरोधी बीजों की जानकारी दे सकता हूँ। अभी आपके खेत में कौन सी फसल है?",
+            f"छिड़काव की सही मात्रा और रासायनिक दवाओं की पुष्टि के लिए नज़दीकी डीलर से पूछें। {farmer_name} भाई, हम फसल रोग निवारण और सही उत्पाद चयन में आपकी मदद कर सकते हैं। क्या आप फसल के बारे में कुछ और जानना चाहते हैं?"
+        ]
+        return choose_varied_option(options)
+
+    # 3. Unclear / Gibberish / Ambiguous messages
+    if extracted.get("is_unclear"):
+        attempts = collected.get("clarify_attempts", 0) + 1
+        collected["clarify_attempts"] = attempts
+        
+        if attempts <= 2:
+            options = [
+                f"मुझे यह पूरी तरह समझ नहीं आया, {farmer_name} भाई। क्या आप थोड़ा और बताएँगे?",
+                f"माफ़ कीजिए {farmer_name} भाई, ज़रा खुलकर बताइए — किस फसल या किस समस्या की बात है?",
+                f"प्रिय {farmer_name}, मैं आपकी बात पूरी तरह समझ नहीं पाया। क्या आप अपनी फसल और उसकी समस्या के बारे में विस्तार से बताएंगे?"
+            ]
+            return choose_varied_option(options)
+        else:
+            collected["clarify_attempts"] = 0 # Reset after offering concrete next step
+            crop = collected.get("crop")
+            problem = collected.get("problem_summary")
+            
+            if not crop:
+                return f"किसान भाई {farmer_name}, आइए हम आपकी फसल से शुरुआत करते हैं। आप अभी अपने खेत में कौन सी फसल उगा रहे हैं?"
+            elif not problem:
+                return f"ठीक है, चलिए आपकी {crop} फसल के बारे में बात करते हैं। {farmer_name} भाई, आपकी {crop} में अभी क्या समस्या या बीमारी आ रही है?"
+            else:
+                return f"किसान भाई {farmer_name}, आपकी {crop} फसल और {problem} की समस्या के बारे में हम सही Vigour बीज और डीलर की जानकारी दे सकते हैं। क्या आप डीलर का पता जानना चाहते हैं?"
+
+    # If it is a clear message, reset clarify attempts
+    if "clarify_attempts" in collected and collected["clarify_attempts"] > 0:
+        collected["clarify_attempts"] = 0
+        
     return None
 
 FOLLOWUP_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour Seeds कंपनी के एक अनुभवी और भरोसेमंद कृषि सहायक। Vigour Seeds एक
@@ -1068,22 +1161,27 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
     reply_message = ""
     last_bot_q = collected.get("last_bot_question") or ""
     
+    unclear_reply = handle_unclear_or_out_of_scope(extracted, collected, last_bot_q)
+    
     # 0. Check for short/acknowledgement/help queries first
     short_reply = None
-    if collected.get("recommended"):
-        short_reply = detect_and_handle_short_or_help(user_input, collected.get("name") or "किसान भाई", last_bot_q)
-    else:
-        # Check for open help queries globally
-        clean_input = user_input.strip().lower()
-        help_queries = [
-            "aur kya kya help", "aur kya help", "what can you do", "kya help", "kya madad", 
-            "क्या मदद", "क्या सहायता", "क्या काम", "क्या कर सकते", "madad kya", "help kya",
-            "और क्या कर सकते", "और क्या मदद"
-        ]
-        if any(q in clean_input for q in help_queries):
+    if not unclear_reply:
+        if collected.get("recommended"):
             short_reply = detect_and_handle_short_or_help(user_input, collected.get("name") or "किसान भाई", last_bot_q)
+        else:
+            # Check for open help queries globally
+            clean_input = user_input.strip().lower()
+            help_queries = [
+                "aur kya kya help", "aur kya help", "what can you do", "kya help", "kya madad", 
+                "क्या मदद", "क्या सहायता", "क्या काम", "क्या कर सकते", "madad kya", "help kya",
+                "और क्या कर सकते", "और क्या मदद"
+            ]
+            if any(q in clean_input for q in help_queries):
+                short_reply = detect_and_handle_short_or_help(user_input, collected.get("name") or "किसान भाई", last_bot_q)
 
-    if short_reply:
+    if unclear_reply:
+        reply_message = unclear_reply
+    elif short_reply:
         reply_message = short_reply
     else:
         if current_step == "STEP_7":
