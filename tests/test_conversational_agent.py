@@ -778,12 +778,19 @@ async def test_conversational_post_recommendation_new_problem():
     })
     
     # 2. Farmer asks about a new problem: "अब मक्का की फसल में पत्ते पीले पड़ रहे हैं"
-    mock_responses = make_mock_complete(
-        {"problem": "पत्ते पीले"},
-        "हर्ष भाई, पीले पत्तों की समस्या के लिए मैं नए प्रोडक्ट्स खोज रहा हूँ।"
-    )
-    
-    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+    calls = []
+    async def mock_call(system, user, json_mode=False):
+        calls.append((system, user, json_mode))
+        if json_mode or "extraction" in system:
+            if len(calls) == 1:
+                return json.dumps({"problem": "पत्ते पीले"})
+            return json.dumps({})
+        if len(calls) <= 2:
+            return "हर्ष भाई, क्या पत्तियों पर कोई धब्बे हैं या पूरी पत्ती पीली है?"
+        else:
+            return "हर्ष भाई, मक्के की फसल के लिए आप Vigour 60A90 किस्म बो सकते हैं।"
+            
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_call)):
         msg = ParsedMessage(
             wamid="wamid.new_problem",
             from_phone=phone,
@@ -795,8 +802,22 @@ async def test_conversational_post_recommendation_new_problem():
         
         session = await sessions_repo.get(phone)
         assert session.collected_json.get("crop") == "Maize"
-        # Since crop and problem are known, STEP_7 is executed in the same turn,
-        # which recommends and sets recommended to True at the end of the turn.
+        # Since it's a new problem, it resets recommended/clarified and does the clarification turn first
+        assert session.collected_json.get("recommended") is False
+        assert session.collected_json.get("problem_clarified") is True
+        assert session.collected_json.get("problem_summary") == "पत्ते पीले"
+        
+        # Turn 2: Farmer responds to the clarification
+        msg2 = ParsedMessage(
+            wamid="wamid.new_problem_reply",
+            from_phone=phone,
+            type="text",
+            text="हाँ, पूरी पत्ती पीली है",
+            timestamp="1718563860"
+        )
+        await conversation_router.route_message(msg2)
+        
+        session = await sessions_repo.get(phone)
         assert session.collected_json.get("recommended") is True
         assert session.collected_json.get("problem_summary") == "पत्ते पीले"
 
@@ -859,7 +880,8 @@ async def test_conversational_dhaniya_no_products():
             "total_land": 5.0,
             "water_source": "ट्यूबवेल",
             "crop": "Coriander / Spinach / Methi",
-            "problem_summary": "पत्ते खराब"
+            "problem_summary": "पत्ते खराब",
+            "problem_clarified": True
         }
     })
     
@@ -906,7 +928,8 @@ async def test_conversational_soybean_pest_reco():
             "total_land": 5.0,
             "water_source": "नहर",
             "crop": "Soybean",
-            "problem_summary": "कीट का हमला"
+            "problem_summary": "कीट का हमला",
+            "problem_clarified": True
         }
     })
     
@@ -1202,7 +1225,8 @@ async def test_agronomist_stunted_maize():
             "state": "Madhya Pradesh",
             "total_land": 5.0,
             "water_source": "नहर",
-            "crop": "Maize"
+            "crop": "Maize",
+            "problem_clarified": True
         }
     })
     
@@ -1252,7 +1276,8 @@ async def test_agronomist_pest_caterpillar():
             "state": "Madhya Pradesh",
             "total_land": 5.0,
             "water_source": "कुआँ",
-            "crop": "Soybean"
+            "crop": "Soybean",
+            "problem_clarified": True
         }
     })
     
@@ -1323,3 +1348,216 @@ async def test_agronomist_yellow_leaves():
         assert any(term in last_msg for term in ["पीले", "पीली", "नाइट्रोजन", "कमी", "जल", "पानी", "निकासी"])
 
 
+@pytest.mark.asyncio
+async def test_soft_funnel_and_product_recommendation():
+    """
+    Test Scenario: Soft Funnel and Product Recommendation
+    Verifies:
+    1. First turn: Acknowledges problem and asks 1 clarifying question (symptoms, crop stage, or past treatments).
+    2. Second turn: Gives practical agronomist advice, then recommends a fitting product with dealer info.
+    """
+    phone = "919000000080"
+    await sessions_repo.delete(phone)
+    
+    await sessions_repo.upsert(phone, {
+        "current_step": "start",
+        "collected_json": {
+            "greeted": True,
+            "name": "रामपाल",
+            "district": "Ujjain",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "नहर",
+            "crop": "Soybean"
+        }
+    })
+    
+    # Turn 1: Farmer introduces a pest problem.
+    calls = []
+    async def mock_call_turn1(system, user, json_mode=False):
+        calls.append((system, user, json_mode))
+        if json_mode or "extraction" in system:
+            return json.dumps({"problem": "इल्ली लग गई"})
+        return "रामपाल भाई, सोयाबीन की फसल में इल्ली की समस्या के लिए क्या यह पत्तियों पर है या तने पर? आपने इसके लिए कोई दवा छिड़की है?"
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_call_turn1)):
+        msg = ParsedMessage(
+            wamid="wamid.sf1",
+            from_phone=phone,
+            type="text",
+            text="सोयाबीन में इल्ली लगी है",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert not session.collected_json.get("recommended")
+        assert session.collected_json.get("problem_clarified") is True
+        assert session.collected_json.get("problem_summary") == "इल्ली लग गई"
+        
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "इल्ली" in last_msg
+
+    # Turn 2: Farmer responds to the clarification
+    calls2 = []
+    async def mock_call_turn2(system, user, json_mode=False):
+        calls2.append((system, user, json_mode))
+        if json_mode or "extraction" in system:
+            return json.dumps({})
+        return "रामपाल भाई, सोयाबीन में इल्ली के लिए आप खेत साफ रखें। इसके लिए हमारे Vigour 335 किस्म का चयन कर सकते हैं। उज्जैन में डीलर शर्मा सीड्स से संपर्क करें।"
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_call_turn2)):
+        msg2 = ParsedMessage(
+            wamid="wamid.sf2",
+            from_phone=phone,
+            type="text",
+            text="पत्तियों पर है",
+            timestamp="1718563860"
+        )
+        await conversation_router.route_message(msg2)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("recommended") is True
+        assert "Vigour 335" in session.collected_json.get("all_recommended_ids") or "Vigour 335" in session.collected_json.get("last_recommended_ids")
+        
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Vigour 335" in last_msg
+
+
+@pytest.mark.asyncio
+async def test_pure_advice_no_product_push():
+    """
+    Test Scenario: Pure-advice query with no fitting product.
+    Verifies: Gives agronomist advice without pushing any product when no product fits/exists.
+    """
+    phone = "919000000081"
+    await sessions_repo.delete(phone)
+    
+    # 1. Setup a session for Tomato crop (which has no seeded products in conftest.py)
+    await sessions_repo.upsert(phone, {
+        "current_step": "start",
+        "collected_json": {
+            "greeted": True,
+            "name": "दिलीप",
+            "district": "Ujjain",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "नहर",
+            "crop": "Tomato",
+            "problem_summary": "पत्ते सिकुड़ रहे हैं",
+            "problem_clarified": True
+        }
+    })
+    
+    mock_responses = make_mock_complete(
+        {},
+        "दिलीप भाई, टमाटर के पत्तों के सिकुड़ने (leaf curl) का कारण वायरस या थ्रिप्स कीट हो सकता है। नियंत्रण के लिए संक्रमित पौधों को हटा दें। वर्तमान में हमारे पास टमाटर के स्वीकृत Vigour बीज उपलब्ध नहीं हैं।"
+    )
+    
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.pure_advice",
+            from_phone=phone,
+            type="text",
+            text="क्या दवा डालूँ",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("recommended") is True
+        assert session.collected_json.get("last_recommended_ids") == []
+        
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "टमाटर" in last_msg
+        assert "सिकुड़ने" in last_msg
+        # Ensure no product was pushed
+        assert "Vigour" not in last_msg or "Vigour बीज उपलब्ध नहीं" in last_msg
+
+
+@pytest.mark.asyncio
+async def test_warm_thanks_close_no_pitch():
+    """
+    Test Scenario: Farmer says "धन्यवाद" which closes the loop warmly with no product pitch.
+    """
+    phone = "919000000082"
+    await sessions_repo.delete(phone)
+    
+    await sessions_repo.upsert(phone, {
+        "current_step": "STEP_8",
+        "collected_json": {
+            "greeted": True,
+            "name": "दिनेश",
+            "district": "Ujjain",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "नहर",
+            "crop": "Soybean",
+            "problem_summary": "इल्ली का हमला",
+            "recommended": True
+        }
+    })
+    
+    msg = ParsedMessage(
+        wamid="wamid.thanks",
+        from_phone=phone,
+        type="text",
+        text="धन्यवाद",
+        timestamp="1718563800"
+    )
+    await conversation_router.route_message(msg)
+    
+    last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+    assert any(term in last_msg for term in ["धन्यवाद", "मदद", "किसान भाई", "खुशी", "उपज"])
+    assert "Vigour 335" not in last_msg and "Vigour 9560" not in last_msg
+
+
+@pytest.mark.asyncio
+async def test_no_repeated_pitches():
+    """
+    Test Scenario: Verifies that products in `all_recommended_ids` are not repeatedly pitched.
+    """
+    phone = "919000000083"
+    await sessions_repo.delete(phone)
+    
+    # 1. Setup session where Vigour 335 is already recommended
+    await sessions_repo.upsert(phone, {
+        "current_step": "start",
+        "collected_json": {
+            "greeted": True,
+            "name": "राजेश",
+            "district": "Ujjain",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "कुआँ",
+            "crop": "Soybean",
+            "problem_summary": "इल्ली का हमला",
+            "problem_clarified": True,
+            "all_recommended_ids": ["Vigour 335"]
+        }
+    })
+    
+    # The AI should recommend Vigour 9560 (the only remaining approved soybean product), NOT Vigour 335.
+    mock_responses = make_mock_complete(
+        {},
+        "राजेश भाई, सोयाबीन में इल्ली के लिए खेत साफ रखें। पहले हमने Vigour 335 की बात की थी, अब आप Vigour 9560 बीज बोने पर विचार करें जो कि कम समय में तैयार होता है।"
+    )
+    
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.repeat_pitch",
+            from_phone=phone,
+            type="text",
+            text="दवा बताओ",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("recommended") is True
+        all_recs = session.collected_json.get("all_recommended_ids", [])
+        assert "Vigour 9560" in all_recs
+        assert "Vigour 335" in all_recs
+        
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Vigour 9560" in last_msg

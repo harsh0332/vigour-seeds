@@ -180,23 +180,31 @@ RECOMMENDATION_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — 
 
 किसान का नाम: {farmer_name}
 राज्य: {state}
+जिला: {district}
 फसल: {crop}
 समस्या: {problem}
+नज़दीकी डीलर की जानकारी: {dealer_data}
+पहले से अनुशंसित उत्पाद (Already Recommended): {already_recommended}
 
 आपकी प्रतिक्रिया में निम्नलिखित भाग होने चाहिए:
 1. **कृषि वैज्ञानिक सलाह (Agronomist Advice - First)**:
    किसान भाई के सवाल/समस्या ({problem}) का बहुत ही व्यावहारिक, सटीक और ग्रामीण हिंदी में 1-2 छोटी लाइनों में जवाब दें:
-   - **कीट/इल्ली (Pests)**: सामान्य एकीकृत कीट प्रबंधन (IPM) की सलाह दें (जैसे कीट की पहचान, प्रकाश प्रपंच/चिपचिपे कार्ड, ग्रसित पौधों को हटाना) और कहें: "सही रासायनिक दवा और छिड़काव की मात्रा के लिए नज़दीकी डीलर या कृषि अधिकारी से पुष्टि करें।" (कोई विशिष्ट रासायनिक दवा का नाम या सटीक मात्रा खुद से न बताएं)।
+   - **कीट/इल्ली (Pests)**: सामान्य एकीकृत कीट प्रबंधन (IPM) की सलाह दें (जैसे कीट की पहचान, सफाई, ट्रैप) और कहें: "सही रासायनिक दवा और छिड़काव की मात्रा के लिए नज़दीकी डीलर या कृषि अधिकारी से पुष्टि करें।" (कोई विशिष्ट रासायनिक दवा का नाम या सटीक मात्रा खुद से न बताएं)।
    - **रोग (Diseases)**: फफूंदी/धब्बे/झुलसा आदि के लिए सामान्य जल निकासी, सफाई की सलाह दें और कहें: "सही फफूंदीनाशक और मात्रा के लिए नज़दीकी डीलर या कृषि अधिकारी से पुष्टि करें।"
-   - **पोषक तत्वों की कमी / पत्ती पीली (Nutrients)**: नाइट्रोजन/जिंक/सल्फर/बोरॉन की कमी या पानी के तनाव (Water Stress) जैसे सामान्य कारणों को सरल शब्दों में समझाएं और अगला व्यावहारिक कदम बताएं (जैसे यूरिया/जिंक का उपयोग)।
-   - **खाद और पानी (Fertilizer/Water)**: DAP, यूरिया, NPK या सिंचाई के अंतराल पर सामान्य मार्गदर्शन दें। प्रति एकड़ रासायनिक मात्रा खुद से न बताएं, बल्कि स्थानीय पुष्टि के लिए कहें।
+   - **पोषक तत्वों की कमी / पत्ती पीली (Nutrients)**: नाइट्रोजन/जिंक/सल्फर/बोरॉन की कमी या पानी के तनाव (Water Stress) जैसे सामान्य कारणों को समझाएं और अगला व्यावहारिक कदम बताएं (जैसे यूरिया/जिंक का उपयोग)।
+   - **खाद और पानी (Fertilizer/Water)**: DAP, यूरिया, NPK या सिंचाई के अंतराल पर सामान्य मार्गदर्शन दें।
    - **उपज/गुणवत्ता (Yield)**: पैदावार बढ़ाने, दाना मोटा करने या फल के आकार के लिए व्यावहारिक टिप्स दें।
-   - **मौसम (Weather)**: बारिश से पहले या बाद में स्प्रे करने पर समझदारी भरी सलाह दें (जैसे बारिश के तुरंत पहले स्प्रे न करें, चिपको/स्टीकर का उपयोग करें)।
-   
+   - **मौसम (Weather)**: स्प्रे और मौसम पर सलाह दें।
+
 2. **उत्पाद सिफ़ारिश (Product Recommendation - Second)**:
-   यदि नीचे दिए गए अनुमोदित (approved) उत्पादों में से कोई उत्पाद किसान की समस्या/फसल के लिए उपयुक्त है (जैसे कीट-प्रतिरोधी या उच्च उपज वाला बीज), तो उसे एक मददगार विकल्प के रूप में संक्षेप में (1-2 लाइन) प्रस्तुत करें। यदि उत्पाद का MRP null या 0 है, तो कहें "दाम के लिए नज़दीकी डीलर से पूछें"।
+   - यदि नीचे दिए गए अनुमोदित (approved) उत्पादों में से कोई उत्पाद किसान की समस्या/फसल के लिए उपयुक्त है, तो उसे एक मददगार विकल्प के रूप में संक्षेप में (1-2 लाइन) प्रस्तुत करें (जैसे "इसके लिए हमारी यह किस्म/उत्पाद ... मदद कर सकता है क्योंकि ...")।
+   - **महत्वपूर्ण**: यदि कोई उत्पाद पहले से ही अनुशंसित (Already Recommended) सूची में है, तो उसे दोबारा बिल्कुल भी न पिच/प्रचारित करें। यदि सभी उपलब्ध उत्पाद पहले ही अनुशंसित हो चुके हैं, तो उत्पाद की सिफ़ारिश वाला भाग पूरी तरह छोड़ दें (दोहराव से बचें)।
+   - यदि उत्पाद का MRP null या 0 है, तो कहें "दाम के लिए नज़दीकी डीलर से पूछें" (do not invent price).
    अनुमोदित उत्पाद:
    {products_data}
+
+3. **डीलर और अगला कदम (Dealer & Next Step - Third)**:
+   किसान को संक्षेप में बताएं कि वे इसे कहाँ से प्राप्त कर सकते हैं। नज़दीकी डीलर ({dealer_data}) की जानकारी साझा करें और खेती से जुड़े अन्य सवालों के लिए आमंत्रित करें।
 
 महत्वपूर्ण नियम:
 - **केवल 2 से 5 छोटी लाइनें** ही लिखें। संदेश बहुत लंबा या उबाऊ न हो।
@@ -210,24 +218,35 @@ NO_PRODUCT_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigo
 किसान का नाम: {farmer_name}
 फसल: {crop}
 समस्या: {problem}
+नज़दीकी डीलर की जानकारी: {dealer_data}
 
 आपकी प्रतिक्रिया में निम्नलिखित भाग होने चाहिए:
 1. **कृषि वैज्ञानिक सलाह (Agronomist Advice - First)**:
-   किसान भाई के सवाल/समस्या ({problem}) का बहुत ही व्यावहारिक, सटीक और ग्रामीण हिंदी में 1-2 छोटी लाइनों में जवाब दें:
-   - **कीट/इल्ली (Pests)**: सामान्य एकीकृत कीट प्रबंधन (IPM) की सलाह दें और कहें: "सही रासायनिक दवा और छिड़काव की मात्रा के लिए नज़दीकी डीलर या कृषि अधिकारी से पुष्टि करें।" (कोई विशिष्ट रासायनिक दवा का नाम या सटीक मात्रा खुद से न बताएं)।
-   - **रोग (Diseases)**: फफूंदी/धब्बे/झुलसा आदि के लिए सामान्य सलाह दें और कहें: "सही फफूंदीनाशक और मात्रा के लिए नज़दीकी डीलर या कृषि अधिकारी से पुष्टि करें।"
-   - **पोषक तत्वों की कमी / पत्ती पीली (Nutrients)**: नाइट्रोजन/जिंक/सल्फर/बोरॉन की कमी या पानी के तनाव के सामान्य कारणों को समझाएं और अगला व्यावहारिक कदम बताएं।
-   - **खाद और पानी (Fertilizer/Water)**: DAP, यूरिया, NPK या सिंचाई के अंतराल पर सामान्य मार्गदर्शन दें।
-   - **उपज/गुणवत्ता (Yield)**: पैदावार बढ़ाने, दाना मोटा करने या फल के आकार के लिए व्यावहारिक टिप्स दें।
-   - **मौसम (Weather)**: स्प्रे और मौसम पर सलाह दें।
-
-2. **उत्पाद उपलब्धता की जानकारी (Second)**:
-   ईमानदारी और विनम्रता से किसान भाई को बताएं कि वर्तमान में हमारे पास {crop} के लिए कोई अनुमोदित (approved) Vigour बीज उपलब्ध नहीं है। लेकिन हम उन्हें नज़दीकी डीलर या हमारे किसी कृषि विशेषज्ञ से जोड़ सकते हैं।
+   किसान भाई के सवाल/समस्या ({problem}) का बहुत ही व्यावहारिक, सटीक और ग्रामीण हिंदी में 1-2 छोटी लाइनों में जवाब दें (कीट/इल्ली/रोग/पोषक तत्वों/खाद-पानी/मौसम पर)। रासायनिक दवाओं की सटीक मात्रा खुद से न बताएं, डीलर/कृषि अधिकारी से पुष्टि करने के लिए कहें।
+   
+2. **उत्पाद अनुपलब्धता और अगला कदम (Second)**:
+   ईमानदारी और विनम्रता से किसान भाई को बताएं कि वर्तमान में हमारे पास {crop} के लिए कोई अनुमोदित (approved) Vigour बीज उपलब्ध नहीं है। लेकिन वे नज़दीकी डीलर ({dealer_data}) या हमारे विशेषज्ञ से संपर्क कर सकते हैं। कोई भी उत्पाद जबरदस्ती न थोपें (no product push)।
 
 महत्वपूर्ण नियम:
 - **केवल 2 से 5 छोटी लाइनें** ही लिखें।
 - भाषा सरल, ग्रामीण हिंदी, गर्मजोशी भरी होनी चाहिए ("किसान भाई", "{farmer_name} भाई" या "{farmer_name} जी")।
 - **सुरक्षा और सच्चाई**: किसी भी रासायनिक दवा का नाम या छिड़काव की सटीक मात्रा खुद से मनगढ़ंत न लिखें। कोई काल्पनिक बीज का नाम न बनाएं।
+
+केवल किसान को भेजे जाने वाला शुद्ध संदेश लिखें। कोई JSON या अतिरिक्त टेक्स्ट न लिखें।"""
+
+CLARIFY_PROBLEM_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour Seeds कंपनी के एक अनुभवी और भरोसेमंद कृषि सहायक। आप एक समझदार कृषि वैज्ञानिक (Agronomist) हैं।
+
+किसान का नाम: {farmer_name}
+फसल: {crop}
+समस्या: {problem}
+
+Your Task:
+किसान भाई ने अपनी फसल में समस्या ({problem}) बताई है। समस्या को पूरी तरह समझने के लिए उनसे 1 छोटा और प्रासंगिक अनुवर्ती सवाल (Follow-up Question) पूछें (जैसे फसल कितने दिन की है, पत्तों पर किस तरह के धब्बे हैं, या उन्होंने पहले से कौन सी दवा डाली है)।
+
+Guidelines:
+1. किसान की समस्या को पहले 1 छोटी लाइन में गर्मजोशी से स्वीकार (acknowledge) करें।
+2. केवल 1-2 छोटी लाइनें ही लिखें।
+3. भाषा सरल, ग्रामीण हिंदी, गर्मजोशी भरी होनी चाहिए ("किसान भाई", "{farmer_name} भाई" या "{farmer_name} जी")।
 
 केवल किसान को भेजे जाने वाला शुद्ध संदेश लिखें। कोई JSON या अतिरिक्त टेक्स्ट न लिखें।"""
 
@@ -287,19 +306,16 @@ ADVISOR_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour 
 समस्या: {problem}
 नज़दीकी डीलर की जानकारी:
 {dealer_data}
+पहले से अनुशंसित उत्पाद (Already Recommended): {already_recommended}
 
 Your Task:
 किसान भाई के संदेश का जवाब दें।
 1. **कृषि वैज्ञानिक सलाह (Agronomist Advice)**:
-   यदि वे फसल, कीड़े-बीमारी, खाद-पानी, या मौसम से जुड़े कृषि वैज्ञानिक सवाल पूछते हैं, तो एक सच्चे वैज्ञानिक की तरह सरल ग्रामीण हिंदी में 1-2 छोटी लाइनों में सलाह दें:
-   - रासायनिक दवाओं या सटीक छिड़काव मात्रा के बारे में खुद से निर्णय न लें, हमेशा "सही दवा और मात्रा के लिए नज़दीकी डीलर या कृषि अधिकारी से पुष्टि करें" कहें।
-   - पोषक तत्वों की कमी (पीले पत्ते, बढ़वार रुकी) या पानी की समस्या के सामान्य कारणों को सरल शब्दों में समझाएं।
-   - खाद और पानी के समय पर सामान्य मार्गदर्शन दें।
-   - मौसम और स्प्रे पर मार्गदर्शन दें।
+   यदि वे खेती, खाद-पानी, कीड़े-बीमारी या मौसम से जुड़े सवाल पूछते हैं, तो 1-2 छोटी लाइनों में व्यावहारिक सलाह दें। रासायनिक दवाओं या मात्रा के लिए डीलर/कृषि अधिकारी से पुष्टि करने के लिए कहें।
 2. **उत्पाद और डीलर (Product & Dealer)**:
-   यदि वे बीज, दुकान की दूरी, या डीलर के बारे में पूछते हैं, तो डीलर की जानकारी ({dealer_data}) साझा करें।
+   यदि वे उत्पाद के बारे में पूछते हैं, तो केवल तभी संक्षेप में बताएं जब वह पहले से अनुशंसित (Already Recommended) न हो। दोहराव से बचें। डीलर ({dealer_data}) की जानकारी साझा करें।
 3. **आत्मीयता**:
-   यदि वे धन्यवाद या बातचीत खत्म करने वाली बातें बोलते हैं, तो बहुत ही आत्मीयता से बातचीत को समाप्त करें।
+   यदि वे धन्यवाद, ठीक है, या बातचीत खत्म करने वाली बातें बोलते हैं, तो बहुत ही आत्मीयता से बातचीत को समाप्त करें (कोई उत्पाद पिच न करें)।
 
 महत्वपूर्ण नियम:
 - **केवल 2 से 5 छोटी लाइनें** ही लिखें।
@@ -1115,6 +1131,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
         # Start a fresh mini-cycle for the new crop/problem post-recommendation
         collected["recommended"] = False
         collected["asked_followup"] = False
+        collected["problem_clarified"] = False
         collected.pop("last_recommended_ids", None)
         collected["escalated_to_human"] = False
         collected.pop("photo_url", None)
@@ -1213,52 +1230,79 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
         reply_message = short_reply
     else:
         if current_step == "STEP_7":
-            products = await tool_find_products(collected["crop"], collected["problem_summary"], phone)
-            if len(products) == 0:
-                no_prod_prompt = NO_PRODUCT_SYSTEM_PROMPT.format(
+            if not collected.get("problem_clarified"):
+                clarify_prompt = CLARIFY_PROBLEM_SYSTEM_PROMPT.format(
                     farmer_name=collected.get("name") or "किसान भाई",
                     crop=collected.get("crop"),
                     problem=collected.get("problem_summary")
                 )
                 reply_message = await ai_provider.complete(
-                    system=no_prod_prompt,
-                    user=f"Explain no products available for: {collected.get('crop')}"
+                    system=clarify_prompt,
+                    user=user_input
                 )
+                collected["problem_clarified"] = True
             else:
-                products_data_str = json.dumps(products, ensure_ascii=False)
-                recommend_prompt = RECOMMENDATION_SYSTEM_PROMPT.format(
-                    farmer_name=collected.get("name") or "किसान भाई",
-                    state=collected.get("state"),
-                    crop=collected.get("crop"),
-                    problem=collected.get("problem_summary"),
-                    products_data=products_data_str
-                )
+                products = await tool_find_products(collected["crop"], collected["problem_summary"], phone)
+                dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
+                dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
+                already_recommended_list = collected.get("all_recommended_ids", [])
                 
-                # Retry loop with no-invent guard
-                max_retries = 3
-                user_msg = f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}"
-                for attempt in range(max_retries):
+                if len(products) == 0:
+                    no_prod_prompt = NO_PRODUCT_SYSTEM_PROMPT.format(
+                        farmer_name=collected.get("name") or "किसान भाई",
+                        crop=collected.get("crop"),
+                        problem=collected.get("problem_summary"),
+                        dealer_data=dealer_data_str
+                    )
                     reply_message = await ai_provider.complete(
-                        system=recommend_prompt,
-                        user=user_msg
+                        system=no_prod_prompt,
+                        user=f"Explain no products available for: {collected.get('crop')}"
                     )
-                    if not check_for_fabricated_products(reply_message, products):
-                        break
-                    logger.warning(f"Fabricated product name detected (attempt {attempt + 1}). Retrying...")
-                    user_msg = (
-                        f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}. "
-                        f"IMPORTANT: You generated a fabricated product name. Do NOT invent or mention any product names "
-                        f"other than {', '.join([p['variety_name'] for p in products])}."
+                else:
+                    products_data_str = json.dumps(products, ensure_ascii=False)
+                    recommend_prompt = RECOMMENDATION_SYSTEM_PROMPT.format(
+                        farmer_name=collected.get("name") or "किसान भाई",
+                        state=collected.get("state"),
+                        district=collected.get("district"),
+                        crop=collected.get("crop"),
+                        problem=collected.get("problem_summary"),
+                        products_data=products_data_str,
+                        dealer_data=dealer_data_str,
+                        already_recommended=json.dumps(already_recommended_list, ensure_ascii=False)
                     )
+                    
+                    # Retry loop with no-invent guard
+                    max_retries = 3
+                    user_msg = f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}"
+                    for attempt in range(max_retries):
+                        reply_message = await ai_provider.complete(
+                            system=recommend_prompt,
+                            user=user_msg
+                        )
+                        if not check_for_fabricated_products(reply_message, products):
+                            break
+                        logger.warning(f"Fabricated product name detected (attempt {attempt + 1}). Retrying...")
+                        user_msg = (
+                            f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}. "
+                            f"IMPORTANT: You generated a fabricated product name. Do NOT invent or mention any product names "
+                            f"other than {', '.join([p['variety_name'] for p in products])}."
+                        )
 
-            collected["recommended"] = True
-            collected["last_recommended_ids"] = [p["variety_name"] for p in products]
-            
-            try:
-                await save_lead_if_complete(phone, collected)
-            except Exception as save_err:
-                logger.error("Failed saving lead during recommendation", extra={"phone": phone, "error": str(save_err)})
+                collected["recommended"] = True
+                collected["asked_followup"] = True
+                collected["last_recommended_ids"] = [p["variety_name"] for p in products]
                 
+                all_recs = collected.get("all_recommended_ids", [])
+                for p in products:
+                    if p["variety_name"] not in all_recs:
+                        all_recs.append(p["variety_name"])
+                collected["all_recommended_ids"] = all_recs
+                
+                try:
+                    await save_lead_if_complete(phone, collected)
+                except Exception as save_err:
+                    logger.error("Failed saving lead during recommendation", extra={"phone": phone, "error": str(save_err)})
+                    
         elif current_step == "STEP_8":
             dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
             dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
@@ -1279,7 +1323,8 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
                 farmer_name=collected.get("name") or "किसान भाई",
                 dealer_data=dealer_data_str,
                 crop=collected.get("crop"),
-                problem=collected.get("problem_summary")
+                problem=collected.get("problem_summary"),
+                already_recommended=json.dumps(collected.get("all_recommended_ids", []), ensure_ascii=False)
             )
             reply_message = await ai_provider.complete(
                 system=advisor_prompt,
