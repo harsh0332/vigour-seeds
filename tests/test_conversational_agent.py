@@ -711,3 +711,91 @@ async def test_conversational_testing_reset():
     res = supabase_client.table("conversations").select("*").eq("whatsapp_phone", phone).execute()
     assert len(res.data) == 0
 
+@pytest.mark.asyncio
+async def test_conversational_post_recommendation_new_crop():
+    phone = "919000000031"
+    
+    # 1. Setup a session that is already post-recommendation (greeted, name, loc, land, water, crop=Maize, recommended=True)
+    await sessions_repo.upsert(phone, {
+        "current_step": "STEP_8",
+        "collected_json": {
+            "greeted": True,
+            "name": "Harsh",
+            "district": "Narsinghpur",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "ट्यूबवेल",
+            "crop": "Maize",
+            "problem_summary": "केड़े",
+            "recommended": True,
+            "last_recommended_ids": ["VIGOUR 60A90"]
+        }
+    })
+    
+    # 2. Farmer asks about tomato (new crop) "टमाटर की फसल में भी समस्या आती है"
+    mock_responses = make_mock_complete(
+        {"crop": "tamatar"},
+        "हर्ष भाई, आपकी टमाटर की फसल में क्या समस्या आ रही है?"
+    )
+    
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.new_crop",
+            from_phone=phone,
+            type="text",
+            text="टमाटर की फसल में भी समस्या आती है",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("crop") == "Tomato"
+        assert session.collected_json.get("recommended") is False
+        assert session.collected_json.get("problem_summary") is None
+        
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "टमाटर" in last_msg
+
+@pytest.mark.asyncio
+async def test_conversational_post_recommendation_new_problem():
+    phone = "919000000032"
+    
+    # 1. Setup a session that is already post-recommendation
+    await sessions_repo.upsert(phone, {
+        "current_step": "STEP_8",
+        "collected_json": {
+            "greeted": True,
+            "name": "Harsh",
+            "district": "Narsinghpur",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "ट्यूबवेल",
+            "crop": "Maize",
+            "problem_summary": "केड़े",
+            "recommended": True,
+            "last_recommended_ids": ["VIGOUR 60A90"]
+        }
+    })
+    
+    # 2. Farmer asks about a new problem: "अब मक्का की फसल में पत्ते पीले पड़ रहे हैं"
+    mock_responses = make_mock_complete(
+        {"problem": "पत्ते पीले"},
+        "हर्ष भाई, पीले पत्तों की समस्या के लिए मैं नए प्रोडक्ट्स खोज रहा हूँ।"
+    )
+    
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.new_problem",
+            from_phone=phone,
+            type="text",
+            text="अब मक्का की फसल में पत्ते पीले पड़ रहे हैं",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("crop") == "Maize"
+        # Since crop and problem are known, STEP_7 is executed in the same turn,
+        # which recommends and sets recommended to True at the end of the turn.
+        assert session.collected_json.get("recommended") is True
+        assert session.collected_json.get("problem_summary") == "पत्ते पीले"

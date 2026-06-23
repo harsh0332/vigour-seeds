@@ -112,10 +112,10 @@ Fields to extract:
 - state: The state name.
 - land_size: The agricultural land size mentioned (e.g. "2 bigha", "5 acre", "10"). Only extract if they are stating how much land they own/cultivate.
 - water_source: The water or irrigation source mentioned (e.g., tube-well/ट्यूबवेल, well/कुआँ, pond/तालाब, canal/नहर, river/नदी, rainfed/बारिश का पानी).
-- crop: The crop name mentioned (e.g., "makka", "dhan", "soyabean").
-- problem: The crop problem description (e.g. "पत्ते पीले", "कीड़े", "रोग", "बढ़वार नहीं").
+- crop: The crop name mentioned (e.g., "makka", "dhan", "soyabean", "dhaniya"). IMPORTANT: If the user mentions a new/different crop than the current profile, extract it.
+- problem: The crop problem description (e.g. "पत्ते पीले", "कीड़े", "रोग", "बढ़वार नहीं"). IMPORTANT: If the user mentions a new/different problem than the current profile, extract it.
 
-Current Profile Status (Do not overwrite these unless the user explicitly changes or corrects them):
+Current Profile Status (Do not overwrite name, location, land, water unless corrected, but ALWAYS extract any new crop or crop problem mentioned in the latest message):
 {profile_status}
 
 Latest User Message:
@@ -147,7 +147,8 @@ PHRASING_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour
 अनुभवी कृषि अधिकारी या किसान भाई बात कर रहा हो।
 
 बातचीत के नियम:
-- हमेशा "किसान भाई" वाले अपनेपन से बात करें। "सर" या "कस्टमर" कभी न कहें।
+- यदि किसान का नाम पता है (Farmer Name: {farmer_name}), तो उन्हें नाम से गर्मजोशी से संबोधित करें (जैसे "{farmer_name} भाई" या "{farmer_name} जी")। इसे हर वाक्य में रोबोट की तरह न दोहराएं, लेकिन बातचीत को व्यक्तिगत बनाएं। यदि नाम नहीं पता, तो "किसान भाई" का उपयोग करें। "सर" या "कस्टमर" कभी न कहें।
+- किसान के नवीनतम उत्तर (Latest Message from Farmer: {user_message}) को ध्यान में रखते हुए, प्रश्न पूछने से पहले उस उत्तर का एक छोटा, स्वाभाविक और आत्मीय पावती (acknowledgement) दें (जैसे: "अच्छा, {farmer_name} भाई, कुआँ से सिंचाई होती है, बहुत बढ़िया।" या "{farmer_name} भाई, 5 एकड़ ज़मीन है, ठीक है।")। इसके बाद ही अगला प्रश्न पूछें। पावती केवल एक छोटी लाइन की होनी चाहिए ताकि मैसेज लंबा न हो। यदि यह पहला संदेश है या नाम/उत्तर अभी उपलब्ध नहीं है, तो बिना पावती के सीधे गर्मजोशी से स्वागत करें।
 - छोटे-छोटे वाक्य, एक बार में सिर्फ़ 1–2 सवाल। मैसेज लंबा न हो।
 - किसी मेन्यू/बटन का ज़िक्र न करें — खुली, इंसानी बातचीत करें।
 
@@ -155,8 +156,13 @@ Your Task:
 Phrase a response to the farmer based on this instruction:
 {step_instruction}
 
+Latest Message from Farmer:
+{user_message}
+
 Farmer Profile Context:
 {profile_context}
+
+Farmer Name: {farmer_name}
 
 Avoid repeating the previous question: '{last_bot_question}'. If you must ask for the same information, ask it in a completely different way or choose another relevant question.
 
@@ -168,17 +174,20 @@ RECOMMENDATION_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — 
 Your Task:
 Recommend Vigour Seeds products to the farmer in simple, warm Hindi.
 
+Farmer Name: {farmer_name}
+
 Guidelines:
-1. Briefly summarize the farmer's details first (State: {state}, Crop: {crop}, Problem: {problem}).
-2. Recommend the following products (up to 3):
+1. यदि किसान का नाम पता है (Farmer Name: {farmer_name}), तो उन्हें नाम से गर्मजोशी से संबोधित करें (जैसे "{farmer_name} भाई" या "{farmer_name} जी")। हमेशा सिर्फ "किसान भाई" न कहें।
+2. Briefly summarize the farmer's details first (State: {state}, Crop: {crop}, Problem: {problem}).
+3. Recommend the following products (up to 3):
 {products_data}
-3. For each product:
+4. For each product:
    - Product variety name
    - Short reason why it fits this problem
    - Benefit
    - Dosage if available, else say "सही मात्रा और दाम के लिए नज़दीकी डीलर से पूछें"
    - Price fallback: if mrp_inr is null or 0, say "दाम के लिए नज़दीकी डीलर से पूछें" (do not invent price).
-4. Keep the tone warm, simple Hindi, friendly WhatsApp format.
+5. Keep the tone warm, simple Hindi, friendly WhatsApp format.
 
 Generate ONLY the final plain text response to send via WhatsApp. Do not output JSON or markdown."""
 
@@ -188,12 +197,15 @@ FOLLOWUP_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour
 Your Task:
 Continue the conversation naturally with the farmer in simple rural Hindi.
 
+Farmer Name: {farmer_name}
+
 Guidelines:
-1. Share the following dealer details if available:
+1. यदि किसान का नाम पता है (Farmer Name: {farmer_name}), तो उन्हें नाम से गर्मजोशी से संबोधित करें (जैसे "{farmer_name} भाई" या "{farmer_name} जी")। हमेशा सिर्फ "किसान भाई" न कहें।
+2. Share the following dealer details if available:
 {dealer_data}
-2. Ask ONE useful follow-up question (e.g., crop stage, recent fertilizer/medicine applied in the last 15-20 days, or offer to look at a crop photo).
-3. Do not ask for name, location, land, water, crop, or problem again as they are already known.
-4. Keep it short, warm, and WhatsApp-friendly.
+3. Ask ONE useful follow-up question (e.g., crop stage, recent fertilizer/medicine applied in the last 15-20 days, or offer to look at a crop photo).
+4. Do not ask for name, location, land, water, crop, or problem again as they are already known.
+5. Keep it short, warm, and WhatsApp-friendly.
 
 Generate ONLY the final plain text response to send via WhatsApp. Do not output JSON or markdown."""
 
@@ -816,22 +828,48 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
     if extracted.get("water_source") and not collected.get("water_source"):
         collected["water_source"] = extracted["water_source"]
         
-    if extracted.get("crop") and not collected.get("crop"):
+    # Resolve extracted crop if present
+    new_crop_canonical = None
+    if extracted.get("crop"):
         from app.data.crop_synonyms import resolve_crop
-        canonical = resolve_crop(extracted["crop"])
-        if canonical:
-            collected["crop"] = canonical
-        else:
+        new_crop_canonical = resolve_crop(extracted["crop"])
+        if not new_crop_canonical:
             matched_crop_row = await find_crop_by_name(extracted["crop"])
             if matched_crop_row:
-                collected["crop"] = CANONICAL_PRODUCT_CROP_MAP.get(
+                new_crop_canonical = CANONICAL_PRODUCT_CROP_MAP.get(
                     matched_crop_row.crop_name_en, matched_crop_row.crop_name_en
                 )
             else:
-                collected["crop"] = extracted["crop"]
-                
-    if extracted.get("problem") and not collected.get("problem_summary"):
-        collected["problem_summary"] = extracted["problem"]
+                new_crop_canonical = extracted["crop"]
+
+    # Check if a new crop or problem is introduced (especially post-recommendation / STEP 8)
+    is_new_crop = new_crop_canonical and collected.get("crop") and new_crop_canonical.lower() != collected.get("crop").lower()
+    is_new_problem = extracted.get("problem") and collected.get("recommended") and extracted["problem"] != collected.get("problem_summary")
+    
+    if is_new_crop or is_new_problem:
+        # Start a fresh mini-cycle for the new crop/problem post-recommendation
+        collected["recommended"] = False
+        collected.pop("last_recommended_ids", None)
+        collected["escalated_to_human"] = False
+        collected.pop("photo_url", None)
+        collected.pop("photo_ai_diagnosis", None)
+        collected.pop("photo_ai_confidence", None)
+        collected.pop("problem_severity_ai", None)
+        
+        if is_new_crop:
+            collected["crop"] = new_crop_canonical
+            if extracted.get("problem"):
+                collected["problem_summary"] = extracted["problem"]
+            else:
+                collected["problem_summary"] = None
+        else: # is_new_problem
+            collected["problem_summary"] = extracted["problem"]
+    else:
+        # Standard resolution (first time setting crop or problem)
+        if new_crop_canonical and not collected.get("crop"):
+            collected["crop"] = new_crop_canonical
+        if extracted.get("problem") and not collected.get("problem_summary"):
+            collected["problem_summary"] = extracted["problem"]
 
     # State machine routing
     current_step = None
@@ -886,6 +924,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
         products = await tool_find_products(collected["crop"], collected["problem_summary"], phone)
         products_data_str = json.dumps(products, ensure_ascii=False)
         recommend_prompt = RECOMMENDATION_SYSTEM_PROMPT.format(
+            farmer_name=collected.get("name") or "किसान भाई",
             state=collected.get("state"),
             crop=collected.get("crop"),
             problem=collected.get("problem_summary"),
@@ -907,6 +946,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
         dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
         dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
         followup_prompt = FOLLOWUP_SYSTEM_PROMPT.format(
+            farmer_name=collected.get("name") or "किसान भाई",
             dealer_data=dealer_data_str
         )
         reply_message = await ai_provider.complete(
@@ -916,13 +956,15 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
         
     else:
         phrasing_prompt = PHRASING_SYSTEM_PROMPT.format(
+            farmer_name=collected.get("name") or "किसान भाई",
+            user_message=user_input,
             step_instruction=step_instruction,
             profile_context=json.dumps(collected, ensure_ascii=False),
             last_bot_question=last_bot_q
         )
         reply_message = await ai_provider.complete(
             system=phrasing_prompt,
-            user=f"Phrase the question for the farmer."
+            user=user_input or "Phrase the question for the farmer."
         )
 
     # No-Repeat Guard
