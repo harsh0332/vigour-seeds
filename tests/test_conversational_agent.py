@@ -1180,3 +1180,146 @@ async def test_conversational_unclear_and_out_of_scope():
         assert any(term in last_msg6 for term in ["बीज", "उत्पाद", "फसल"])
 
 
+@pytest.mark.asyncio
+async def test_agronomist_stunted_maize():
+    """
+    Test Scenario: "मक्का छोटा रह गया क्या डालूँ"
+    Verifies:
+    1. Extracts crop=Maize and problem.
+    2. Receives agronomist advice about nutrient deficiency / watering.
+    3. Bridges to approved maize product variety (e.g. VIGOUR 60A90) if fitting.
+    4. Safe: no fabricated chemical names or precise dosages.
+    """
+    phone = "919000000037"
+    await sessions_repo.delete(phone)
+    
+    await sessions_repo.upsert(phone, {
+        "current_step": "start",
+        "collected_json": {
+            "greeted": True,
+            "name": "दिनेश",
+            "district": "Ujjain",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "नहर",
+            "crop": "Maize"
+        }
+    })
+    
+    mock_responses = make_mock_complete(
+        {"crop": "Maize", "problem": "छोटा रह गया क्या डालूँ"},
+        "दिनेश भाई, मक्के की बढ़वार रुकने या छोटा रहने का मुख्य कारण नाइट्रोजन या जिंक की कमी हो सकती है। आप खेत में यूरिया या जिंक सल्फेट डाल सकते हैं और पानी का सही अंतराल बनाए रखें। अच्छे परिणाम और शानदार पैदावार के लिए आप हमारे Vigour 60A90 किस्म का चयन कर सकते हैं।"
+    )
+    
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.stunted_maize",
+            from_phone=phone,
+            type="text",
+            text="मक्का छोटा रह गया क्या डालूँ",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("crop") == "Maize"
+        assert session.collected_json.get("recommended") is True
+        
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert any(term in last_msg for term in ["बढ़वार", "रुका", "छोटा", "कमी", "यूरिया", "जिंक", "नाइट्रोजन"])
+        assert "Vigour 60A90" in last_msg
+
+
+@pytest.mark.asyncio
+async def test_agronomist_pest_caterpillar():
+    """
+    Test Scenario: "इल्ली लग गई कौन सी दवा मार देगी"
+    Verifies:
+    1. Receives general IPM agronomist advice.
+    2. Tells them to confirm precise chemical pesticide and dosage with dealer/officer.
+    3. Bridges to a pest-tolerant approved soybean product (e.g. Vigour 335).
+    4. NO fabricated chemical dosage as fact.
+    """
+    phone = "919000000038"
+    await sessions_repo.delete(phone)
+    
+    await sessions_repo.upsert(phone, {
+        "current_step": "start",
+        "collected_json": {
+            "greeted": True,
+            "name": "राजेश",
+            "district": "Ujjain",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "कुआँ",
+            "crop": "Soybean"
+        }
+    })
+    
+    mock_responses = make_mock_complete(
+        {"crop": "Soybean", "problem": "इल्ली लग गई कौन सी दवा मार देगी"},
+        "राजेश भाई, सोयाबीन में इल्ली/कीट नियंत्रण के लिए खेतों की सफाई रखें और फेरोमोन ट्रैप लगाएं। सही रासायनिक दवा और छिड़काव की मात्रा के लिए नज़दीकी डीलर या कृषि अधिकारी से पुष्टि करें। अगली बार कीट प्रतिरोधी किस्म Vigour 335 बोने पर विचार करें।"
+    )
+    
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.pest_caterpillar",
+            from_phone=phone,
+            type="text",
+            text="इल्ली लग गई कौन सी दवा मार देगी",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("recommended") is True
+        
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert any(term in last_msg for term in ["इल्ली", "कीट", "सफाई", "नियंत्रण", "ट्रैप"])
+        assert any(term in last_msg for term in ["डीलर", "कृषि अधिकारी", "पुष्टि करें"])
+        assert "Vigour 335" in last_msg
+
+
+@pytest.mark.asyncio
+async def test_agronomist_yellow_leaves():
+    """
+    Test Scenario: "पत्ती पीली पड़ रही है"
+    Verifies:
+    1. Explains likely causes (nitrogen deficiency, waterlogging/stress).
+    2. Recommends next practical steps.
+    """
+    phone = "919000000039"
+    await sessions_repo.delete(phone)
+    
+    await sessions_repo.upsert(phone, {
+        "current_step": "start",
+        "collected_json": {
+            "greeted": True,
+            "name": "राजेश",
+            "district": "Ujjain",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "कुआँ",
+            "crop": "Soybean"
+        }
+    })
+    
+    mock_responses = make_mock_complete(
+        {"crop": "Soybean", "problem": "पत्ती पीली पड़ रही है"},
+        "राजेश भाई, पत्तियों के पीले पड़ने का मुख्य कारण खेत में पानी का जमाव (waterlogging) या नाइट्रोजन की कमी हो सकता है। जल निकासी ठीक करें और हल्की सिंचाई के बाद यूरिया डालें।"
+    )
+    
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.yellow_leaves",
+            from_phone=phone,
+            type="text",
+            text="पत्ती पीली पड़ रही है",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert any(term in last_msg for term in ["पीले", "पीली", "नाइट्रोजन", "कमी", "जल", "पानी", "निकासी"])
+
+
