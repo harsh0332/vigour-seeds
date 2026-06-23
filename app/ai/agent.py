@@ -188,8 +188,75 @@ Guidelines:
    - Dosage if available, else say "सही मात्रा और दाम के लिए नज़दीकी डीलर से पूछें"
    - Price fallback: if mrp_inr is null or 0, say "दाम के लिए नज़दीकी डीलर से पूछें" (do not invent price).
 5. Keep the tone warm, simple Hindi, friendly WhatsApp format.
+6. IMPORTANT: You must ONLY recommend the specific products listed in '{products_data}'. Never invent Vigour variety names. If the farmer's problem is pests/disease, recommend the specific variety from the provided list, highlighting its built-in pest/disease tolerance/resistance traits. Do NOT give general advice like "सभी फसलों में कीड़े लग जाते हैं", but focus specifically on the crop and products.
 
 Generate ONLY the final plain text response to send via WhatsApp. Do not output JSON or markdown."""
+
+NO_PRODUCT_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour Seeds कंपनी के एक अनुभवी और भरोसेमंद कृषि सहायक। Vigour Seeds एक
+विश्वसनीय बीज कंपनी है जो किसानों को अच्छी फसल और बेहतर पैदावार पाने में मदद करती है।
+
+Farmer Name: {farmer_name}
+Crop: {crop}
+Problem: {problem}
+
+Your Task:
+किसान भाई को विनम्रता और ईमानदारी से सूचित करें कि वर्तमान में हमारे पास {crop} के लिए कोई स्वीकृत (approved) Vigour बीज उपलब्ध नहीं है।
+उन्हें कहें कि हम उन्हें नज़दीकी डीलर या हमारे किसी कृषि विशेषज्ञ से जोड़ सकते हैं जो उनकी आगे मदद कर सकें।
+
+Guidelines:
+1. यदि किसान का नाम पता है (Farmer Name: {farmer_name}), तो उन्हें नाम से गर्मजोशी से संबोधित करें (जैसे "{farmer_name} भाई" या "{farmer_name} जी")। हमेशा सिर्फ "किसान भाई" न कहें।
+2. टोन अत्यंत विनम्र, सहानुभूतिपूर्ण और ग्रामीण हिंदी में होनी चाहिए।
+3. कोई भी काल्पनिक या नकली बीज का नाम (जैसे Vigour Coriander-1, आदि) बिल्कुल भी न लिखें।
+4. केवल वही प्रतिक्रिया जनरेट करें जो किसान को भेजनी है। कोई JSON या markdown नहीं।"""
+
+def check_for_fabricated_products(reply_text: str, approved_products: list) -> bool:
+    """
+    Returns True if the reply contains any fabricated Vigour product variety names.
+    variety_names must match EXACTLY one of the variety_names returned by find_products for this turn.
+    """
+    import re
+    
+    # Strip asterisks, double asterisks, underscores, and convert to lowercase
+    cleaned_reply = reply_text.replace("*", "").replace("_", "").lower()
+    
+    # Approved variety names (lowercased, stripped)
+    approved_names = {p["variety_name"].lower().strip() for p in approved_products}
+    
+    # Non-product allowed prefixes (lowercased)
+    allowed_prefixes = [
+        "vigour seeds", "vigour seed", "vigour मित्र", "vigour मित्रा", 
+        "vigour सीड", "vigour सीड्स", "vigour co", "vigour company"
+    ]
+    
+    # Find all occurrences of the word "vigour"
+    for match in re.finditer(r'\bvigour\b', cleaned_reply):
+        start_idx = match.start()
+        lookahead = cleaned_reply[start_idx:]
+        
+        # 1. Check if it's one of the allowed non-product prefixes
+        is_allowed_prefix = False
+        for prefix in allowed_prefixes:
+            if lookahead.startswith(prefix):
+                is_allowed_prefix = True
+                break
+        if is_allowed_prefix:
+            continue
+            
+        # 2. Check if it matches an approved variety name
+        matched_approved = False
+        for name in approved_names:
+            # Use regex to ensure word boundary after the approved name
+            pattern = r'^' + re.escape(name) + r'\b'
+            if re.match(pattern, lookahead):
+                matched_approved = True
+                break
+                
+        if not matched_approved:
+            # We found a "vigour" reference that is neither allowed nor an approved product!
+            # Fabricated product name detected!
+            return True
+            
+    return False
 
 FOLLOWUP_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour Seeds कंपनी के एक अनुभवी और भरोसेमंद कृषि सहायक। Vigour Seeds एक
 विश्वसनीय बीज कंपनी है जो किसानों को अच्छी फसल और बेहतर पैदावार पाने में मदद करती है।
@@ -330,6 +397,7 @@ async def tool_find_products(crop: str, problem: str, phone: Optional[str] = Non
         if matched_crop_row:
             canonical_crop = CANONICAL_PRODUCT_CROP_MAP.get(matched_crop_row.crop_name_en, matched_crop_row.crop_name_en)
         else:
+            logger.info(f"find_products runs: crop_arg={crop}, resolved_canonical_crop=None, variety_names=[]")
             return []
 
     rule = await rules_repo.match(canonical_crop, stage, problem, irrigation_type, region)
@@ -374,6 +442,8 @@ async def tool_find_products(crop: str, problem: str, phone: Optional[str] = Non
             "mrp_inr": p.mrp_inr,
             "pack_size": p.pack_size
         })
+    variety_names = [p["variety_name"] for p in res_list]
+    logger.info(f"find_products runs: crop_arg={crop}, resolved_canonical_crop={canonical_crop}, variety_names={variety_names}")
     return res_list
 
 async def tool_find_dealer(state: str, district: str) -> dict:
@@ -922,18 +992,43 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
     
     if current_step == "STEP_7":
         products = await tool_find_products(collected["crop"], collected["problem_summary"], phone)
-        products_data_str = json.dumps(products, ensure_ascii=False)
-        recommend_prompt = RECOMMENDATION_SYSTEM_PROMPT.format(
-            farmer_name=collected.get("name") or "किसान भाई",
-            state=collected.get("state"),
-            crop=collected.get("crop"),
-            problem=collected.get("problem_summary"),
-            products_data=products_data_str
-        )
-        reply_message = await ai_provider.complete(
-            system=recommend_prompt,
-            user=f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}"
-        )
+        if len(products) == 0:
+            no_prod_prompt = NO_PRODUCT_SYSTEM_PROMPT.format(
+                farmer_name=collected.get("name") or "किसान भाई",
+                crop=collected.get("crop"),
+                problem=collected.get("problem_summary")
+            )
+            reply_message = await ai_provider.complete(
+                system=no_prod_prompt,
+                user=f"Explain no products available for: {collected.get('crop')}"
+            )
+        else:
+            products_data_str = json.dumps(products, ensure_ascii=False)
+            recommend_prompt = RECOMMENDATION_SYSTEM_PROMPT.format(
+                farmer_name=collected.get("name") or "किसान भाई",
+                state=collected.get("state"),
+                crop=collected.get("crop"),
+                problem=collected.get("problem_summary"),
+                products_data=products_data_str
+            )
+            
+            # Retry loop with no-invent guard
+            max_retries = 3
+            user_msg = f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}"
+            for attempt in range(max_retries):
+                reply_message = await ai_provider.complete(
+                    system=recommend_prompt,
+                    user=user_msg
+                )
+                if not check_for_fabricated_products(reply_message, products):
+                    break
+                logger.warning(f"Fabricated product name detected (attempt {attempt + 1}). Retrying...")
+                user_msg = (
+                    f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}. "
+                    f"IMPORTANT: You generated a fabricated product name. Do NOT invent or mention any product names "
+                    f"other than {', '.join([p['variety_name'] for p in products])}."
+                )
+
         collected["recommended"] = True
         collected["last_recommended_ids"] = [p["variety_name"] for p in products]
         

@@ -799,3 +799,138 @@ async def test_conversational_post_recommendation_new_problem():
         # which recommends and sets recommended to True at the end of the turn.
         assert session.collected_json.get("recommended") is True
         assert session.collected_json.get("problem_summary") == "पत्ते पीले"
+
+@pytest.mark.asyncio
+async def test_crop_synonym_resolution_dhaniya():
+    """
+    Test धनिया resolution and ensure no collision with Paddy.
+    """
+    from app.data.crop_synonyms import resolve_crop
+    
+    # Check Hindi धनिया maps to Coriander / Spinach / Methi
+    assert resolve_crop("धनिया") == "Coriander / Spinach / Methi"
+    
+    # Check Hinglish variations map to Coriander / Spinach / Methi
+    assert resolve_crop("dhaniya") == "Coriander / Spinach / Methi"
+    assert resolve_crop("dhanya") == "Coriander / Spinach / Methi"
+    assert resolve_crop("dhaniyan") == "Coriander / Spinach / Methi"
+    assert resolve_crop("dhaniye") == "Coriander / Spinach / Methi"
+    assert resolve_crop("dhania") == "Coriander / Spinach / Methi"
+    
+    # Check Paddy / धान maps to Paddy
+    assert resolve_crop("dhan") == "Paddy"
+    assert resolve_crop("धान") == "Paddy"
+    assert resolve_crop("dhaan") == "Paddy"
+    assert resolve_crop("dhania") != "Paddy"
+    assert resolve_crop("dhanya") != "Paddy"
+
+@pytest.mark.asyncio
+async def test_conversational_dhaniya_no_products():
+    """
+    Test धनिया maps to 0 approved products and outputs an honest message (no invented products).
+    """
+    phone = "919000000033"
+    
+    # Register coriander in catalog
+    in_memory_db.tables["crops"].append({
+        "crop_id": "CR90",
+        "crop_name_hi": "धनिया",
+        "crop_name_en": "Coriander / Spinach / Methi",
+        "in_catalog": "Y"
+    })
+    
+    # Register an unapproved coriander product
+    in_memory_db.tables["products"].append({
+        "product_id": "HRB001",
+        "crop": "Coriander / Spinach / Methi",
+        "variety_name": "Vigour Coriander-1",
+        "approved_for_recommendation": "N",
+        "mrp_inr": None,
+        "pack_size": "500 g"
+    })
+    
+    await sessions_repo.upsert(phone, {
+        "current_step": "start",
+        "collected_json": {
+            "greeted": True,
+            "name": "हरिश",
+            "district": "Ujjain",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "ट्यूबवेल",
+            "crop": "Coriander / Spinach / Methi",
+            "problem_summary": "पत्ते खराब"
+        }
+    })
+    
+    mock_responses = make_mock_complete(
+        {},
+        "हरिश भाई, हमारे पास वर्तमान में धनिया के लिए कोई स्वीकृत Vigour बीज उपलब्ध नहीं है। मैं आपको विशेषज्ञ से जोड़ सकता हूँ।"
+    )
+    
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.dhaniya_test",
+            from_phone=phone,
+            type="text",
+            text="बीज बताओ",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("recommended") is True
+        assert session.collected_json.get("last_recommended_ids") == []
+        
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Vigour Coriander-1" not in last_msg
+        assert "उपलब्ध नहीं" in last_msg or "क्षमा करें" in last_msg or "नहीं है" in last_msg
+
+@pytest.mark.asyncio
+async def test_conversational_soybean_pest_reco():
+    """
+    Test Soybean + pests maps to real approved products and gives soybean-specific recommendation.
+    """
+    phone = "919000000034"
+    
+    # Ensure Soybean crop and approved products are in db (already seeded in conftest, but double check / register)
+    # in_memory_db has PROD_S1 (Vigour 335) and PROD_S2 (Vigour 9560) approved for Soybean.
+    
+    await sessions_repo.upsert(phone, {
+        "current_step": "start",
+        "collected_json": {
+            "greeted": True,
+            "name": "दिनेश",
+            "district": "Ujjain",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "नहर",
+            "crop": "Soybean",
+            "problem_summary": "कीट का हमला"
+        }
+    })
+    
+    # Mock LLM response recommending Vigour 335
+    mock_responses = make_mock_complete(
+        {},
+        "दिनेश भाई, सोयाबीन में कीट की समस्या के लिए हम आपको Vigour 335 बीज की सलाह देते हैं जो कीट सहनशील है।"
+    )
+    
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.soybean_pest_test",
+            from_phone=phone,
+            type="text",
+            text="सलाह दो",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("recommended") is True
+        assert "Vigour 335" in session.collected_json.get("last_recommended_ids")
+        
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Vigour 335" in last_msg
+        assert "सोयाबीन" in last_msg
+

@@ -55,7 +55,7 @@ _CROP_SYNONYMS = {
     "Beans": ["beans", "bean", "sem", "फलियां", "बीन्स", "सेम"],
     "Sweet Corn / Peas / Gawar": ["sweet corn", "sweetcorn", "meethi makka", "peas", "matar",
                                   "मटर", "gawar", "guar", "ग्वार", "मीठी मक्का"],
-    "Coriander / Spinach / Methi": ["coriander", "dhania", "धनिया", "spinach", "palak", "पालक",
+    "Coriander / Spinach / Methi": ["coriander", "dhania", "dhaniya", "dhaniye", "dhanya", "dhaniyan", "धनिया", "धलिये", "spinach", "palak", "पालक",
                                     "methi", "मेथी"],
 }
 
@@ -107,5 +107,12 @@ def resolve_crop(user_text: str):
         for syn, canonical in single_syns:
             n = min(len(tok), len(syn))
             if n >= 4 and tok[:4] == syn[:4]:
+                if canonical == "Paddy" and (
+                    tok.startswith("dhani") or 
+                    tok.startswith("dhany") or 
+                    tok.startswith("dhania") or 
+                    tok.startswith("dhaniy")
+                ):
+                    continue
                 return canonical
     return None
