@@ -934,3 +934,101 @@ async def test_conversational_soybean_pest_reco():
         assert "Vigour 335" in last_msg
         assert "सोयाबीन" in last_msg
 
+
+@pytest.mark.asyncio
+async def test_conversational_repetition_and_short_messages():
+    """
+    Test that:
+    1. "धन्यवाद" gets a warm short close, not a repeated question.
+    2. Three consecutive short messages ("ok", "aur kya help", "thanks") never produce two identical replies.
+    3. The "15-20 दिन" follow-up is never sent twice.
+    """
+    phone = "919000000035"
+    await sessions_repo.delete(phone)
+    
+    # Setup session: recommended is True, but asked_followup is False (meaning it is about to enter STEP_8)
+    await sessions_repo.upsert(phone, {
+        "current_step": "STEP_8",
+        "collected_json": {
+            "greeted": True,
+            "name": "दिनेश",
+            "district": "Ujjain",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "नहर",
+            "crop": "Soybean",
+            "problem_summary": "कीट का हमला",
+            "recommended": True
+        }
+    })
+    
+    # 1. First turn: Dinesh says "सलाह के लिए शुक्रिया" -> should get dealer + 15-20 days follow-up (STEP_8)
+    mock_responses = make_mock_complete(
+        {},
+        "दिनेश भाई, हमारे डीलर शर्मा सीड्स हैं। क्या आपने पिछले 15-20 दिनों में कोई खाद या दवा डाली है?"
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.t1",
+            from_phone=phone,
+            type="text",
+            text="सलाह के लिए शुक्रिया",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("asked_followup") is True
+        
+        last_msg1 = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "15-20" in last_msg1
+        
+    # 2. Second turn: Dinesh says "ok" -> should be intercepted by short-reply handler (ok category)
+    # and return a brief acknowledgement, not another "15-20 दिन" question.
+    msg = ParsedMessage(
+        wamid="wamid.t2",
+        from_phone=phone,
+        type="text",
+        text="ok",
+        timestamp="1718563800"
+    )
+    await conversation_router.route_message(msg)
+    
+    session = await sessions_repo.get(phone)
+    last_msg2 = mock_whatsapp_client.sent_messages[-1]["body"]
+    assert "15-20" not in last_msg2
+    # Ensure it didn't repeat the first message
+    assert last_msg1 != last_msg2
+    
+    # 3. Third turn: Dinesh says "aur kya help kar sakte ho" -> should be intercepted by help handler (open help)
+    msg = ParsedMessage(
+        wamid="wamid.t3",
+        from_phone=phone,
+        type="text",
+        text="aur kya help kar sakte ho",
+        timestamp="1718563800"
+    )
+    await conversation_router.route_message(msg)
+    
+    session = await sessions_repo.get(phone)
+    last_msg3 = mock_whatsapp_client.sent_messages[-1]["body"]
+    assert "15-20" not in last_msg3
+    assert any(term in last_msg3 for term in ["मदद", "सहायता", "खोज", "पहचानने"])
+    assert last_msg2 != last_msg3
+    
+    # 4. Fourth turn: Dinesh says "धन्यवाद" -> should get warm close (thanks category)
+    msg = ParsedMessage(
+        wamid="wamid.t4",
+        from_phone=phone,
+        type="text",
+        text="धन्यवाद",
+        timestamp="1718563800"
+    )
+    await conversation_router.route_message(msg)
+    
+    session = await sessions_repo.get(phone)
+    last_msg4 = mock_whatsapp_client.sent_messages[-1]["body"]
+    assert "15-20" not in last_msg4
+    assert any(term in last_msg4 for term in ["मदद", "खुशी", "बात"])
+    assert last_msg3 != last_msg4
+

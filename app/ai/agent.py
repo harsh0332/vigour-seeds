@@ -258,6 +258,80 @@ def check_for_fabricated_products(reply_text: str, approved_products: list) -> b
             
     return False
 
+ADVISOR_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour Seeds कंपनी के एक अनुभवी और भरोसेमंद कृषि सहायक।
+किसान भाई {farmer_name} के लिए पहले ही {crop} की समस्या ({problem}) के लिए उत्पाद और डीलर जानकारी दी जा चुकी है।
+
+Your Task:
+किसान भाई के अगले संदेश का जवाब दें। यदि वे कोई सवाल पूछते हैं (जैसे बीज लगाने की विधि, कीमत, दुकान कहाँ है आदि), तो उसका सरल ग्रामीण हिंदी में जवाब दें।
+यदि वे धन्यवाद, ठीक है, या बातचीत खत्म करने वाली बातें बोलते हैं, तो बहुत ही आत्मीयता से बातचीत को समाप्त करें।
+यदि वे किसी नई समस्या या नई फसल के बारे में बोलते हैं, तो उसका उल्लेख करें (हालाँकि नया विषय शुरू होने पर सिस्टम खुद ही रीसेट कर देगा)।
+
+Guidelines:
+1. गर्मजोशी से उनके नाम से संबोधित करें (जैसे "{farmer_name} भाई" या "{farmer_name} जी")।
+2. "पिछले 15-20 दिनों में कौन सी खाद/दवा डाली" - यह प्रश्न अब बिल्कुल भी नहीं पूछना है।
+3. टोन आत्मीय, विनम्र और कृषि सलाहकार जैसी होनी चाहिए।
+4. केवल वही प्रतिक्रिया जनरेट करें जो किसान को भेजनी है। कोई JSON या markdown नहीं।"""
+
+def detect_and_handle_short_or_help(text: str, farmer_name: str, last_reply: str) -> str:
+    import random
+    import re
+    clean = text.strip().lower()
+    
+    # 1. Open help / "what can you do" queries
+    help_queries = [
+        "aur kya kya help", "aur kya help", "what can you do", "kya help", "kya madad", 
+        "क्या मदद", "क्या सहायता", "क्या काम", "क्या कर सकते", "madad kya", "help kya",
+        "और क्या कर सकते", "और क्या मदद"
+    ]
+    if any(q in clean for q in help_queries):
+        options = [
+            f"मैं फसल की समस्या, कीड़े-बीमारी, खाद-पानी, बीज चुनाव, और सही Vigour प्रोडक्ट चुनने में मदद करता हूँ। {farmer_name} भाई, आपकी फसल में अभी क्या दिक्कत है?",
+            f"किसान भाई {farmer_name}, मैं आपकी फसल की बीमारी पहचानने, खाद-दवा की जानकारी देने और सही Vigour बीज चुनने में मदद कर सकता हूँ। अभी आपके खेत में कौन सी फसल है?",
+            f"जी, मैं बीजों के चयन, सिंचाई, खाद-पानी के उपयोग और फसलों में लगने वाले रोगों के निदान में आपकी सहायता कर सकता हूँ। {farmer_name} भाई, अभी क्या समस्या आ रही है?"
+        ]
+        return random.choice([o for o in options if o != last_reply])
+
+    # 2. Thanks queries
+    thanks_words = ["धन्यवाद", "thank you", "shukriya", "thanks", "dhanyawad", "dhanyavad", "शुक्रिया", "tnx", "ty"]
+    if any(w == clean or (w in clean and len(clean) < 15) for w in thanks_words):
+        options = [
+            f"खुशी हुई मदद करके, {farmer_name} भाई! फसल, खाद, बीज या बीमारी से जुड़ा कोई सवाल हो तो बेझिझक बताइए।",
+            f"मदद करके बहुत अच्छा लगा, {farmer_name} भाई! आगे भी खेती में कोई समस्या हो तो आपका यह Vigour मित्र हमेशा हाज़िर है।",
+            f"कोई बात नहीं, {farmer_name} भाई! अच्छी फसल और बेहतर उपज के लिए हमेशा संपर्क में रहें।"
+        ]
+        return random.choice([o for o in options if o != last_reply])
+
+    # 3. Okay / ठीक है queries
+    ok_words = ["ok", "okay", "ठीक है", "thik hai", "thik", "ठीक", "ओके", "okk", "okey"]
+    if clean in ok_words:
+        options = [
+            f"बढ़िया! {farmer_name} भाई, आपकी खेती से जुड़ी और कोई समस्या हो तो बताइए।",
+            f"जी ठीक है, {farmer_name} भाई। फसल, बीज या खाद के बारे में और कुछ जानना चाहते हैं?",
+            f"ठीक है {farmer_name} भाई, अगर कोई और सवाल हो तो बेझिझक लिखिएगा।"
+        ]
+        return random.choice([o for o in options if o != last_reply])
+
+    # 4. Yes / अच्छा / हाँ queries
+    yes_words = ["हाँ", "हाँ जी", "जी हाँ", "जी", "अच्छा", "achha", "haan", "han", "yes", "ji", "जी!"]
+    if clean in yes_words:
+        options = [
+            f"जी! {farmer_name} भाई, चाहें तो फसल का नाम या समस्या बताइए, मैं सही सलाह दूँगा।",
+            f"अच्छा {farmer_name} भाई, खेती-बाड़ी से संबंधित किसी भी सहायता के लिए मैं यहाँ हूँ। कोई सवाल है?",
+            f"जी बिल्कुल {farmer_name} भाई! फसल की बीमारी या खाद-पानी से जुड़ा कोई भी प्रश्न आप पूछ सकते हैं।"
+        ]
+        return random.choice([o for o in options if o != last_reply])
+
+    # 5. Emoji-only queries
+    if len(clean) > 0 and not re.search(r'[a-zA-Z0-9\u0900-\u097F]', clean):
+        options = [
+            f"🙏 और कोई मदद चाहिए तो बताइए, {farmer_name} भाई।",
+            f"👍 जी {farmer_name} भाई, खेती-बाड़ी से जुड़ा कोई भी सवाल हो तो ज़रूर पूछिएगा।",
+            f"😊 धन्यवाद {farmer_name} भाई! कोई और सहायता चाहिए हो तो बताइए।"
+        ]
+        return random.choice([o for o in options if o != last_reply])
+
+    return None
+
 FOLLOWUP_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour Seeds कंपनी के एक अनुभवी और भरोसेमंद कृषि सहायक। Vigour Seeds एक
 विश्वसनीय बीज कंपनी है जो किसानों को अच्छी फसल और बेहतर पैदावार पाने में मदद करती है।
 
@@ -919,6 +993,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
     if is_new_crop or is_new_problem:
         # Start a fresh mini-cycle for the new crop/problem post-recommendation
         collected["recommended"] = False
+        collected["asked_followup"] = False
         collected.pop("last_recommended_ids", None)
         collected["escalated_to_human"] = False
         collected.pop("photo_url", None)
@@ -985,109 +1060,174 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
         if not collected.get("recommended"):
             current_step = "STEP_7"
         else:
-            current_step = "STEP_8"
+            if not collected.get("asked_followup"):
+                current_step = "STEP_8"
+            else:
+                current_step = "STEP_ADVISOR"
 
     reply_message = ""
     last_bot_q = collected.get("last_bot_question") or ""
     
-    if current_step == "STEP_7":
-        products = await tool_find_products(collected["crop"], collected["problem_summary"], phone)
-        if len(products) == 0:
-            no_prod_prompt = NO_PRODUCT_SYSTEM_PROMPT.format(
+    # 0. Check for short/acknowledgement/help queries first
+    short_reply = None
+    if collected.get("recommended"):
+        short_reply = detect_and_handle_short_or_help(user_input, collected.get("name") or "किसान भाई", last_bot_q)
+    else:
+        # Check for open help queries globally
+        clean_input = user_input.strip().lower()
+        help_queries = [
+            "aur kya kya help", "aur kya help", "what can you do", "kya help", "kya madad", 
+            "क्या मदद", "क्या सहायता", "क्या काम", "क्या कर सकते", "madad kya", "help kya",
+            "और क्या कर सकते", "और क्या मदद"
+        ]
+        if any(q in clean_input for q in help_queries):
+            short_reply = detect_and_handle_short_or_help(user_input, collected.get("name") or "किसान भाई", last_bot_q)
+
+    if short_reply:
+        reply_message = short_reply
+    else:
+        if current_step == "STEP_7":
+            products = await tool_find_products(collected["crop"], collected["problem_summary"], phone)
+            if len(products) == 0:
+                no_prod_prompt = NO_PRODUCT_SYSTEM_PROMPT.format(
+                    farmer_name=collected.get("name") or "किसान भाई",
+                    crop=collected.get("crop"),
+                    problem=collected.get("problem_summary")
+                )
+                reply_message = await ai_provider.complete(
+                    system=no_prod_prompt,
+                    user=f"Explain no products available for: {collected.get('crop')}"
+                )
+            else:
+                products_data_str = json.dumps(products, ensure_ascii=False)
+                recommend_prompt = RECOMMENDATION_SYSTEM_PROMPT.format(
+                    farmer_name=collected.get("name") or "किसान भाई",
+                    state=collected.get("state"),
+                    crop=collected.get("crop"),
+                    problem=collected.get("problem_summary"),
+                    products_data=products_data_str
+                )
+                
+                # Retry loop with no-invent guard
+                max_retries = 3
+                user_msg = f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}"
+                for attempt in range(max_retries):
+                    reply_message = await ai_provider.complete(
+                        system=recommend_prompt,
+                        user=user_msg
+                    )
+                    if not check_for_fabricated_products(reply_message, products):
+                        break
+                    logger.warning(f"Fabricated product name detected (attempt {attempt + 1}). Retrying...")
+                    user_msg = (
+                        f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}. "
+                        f"IMPORTANT: You generated a fabricated product name. Do NOT invent or mention any product names "
+                        f"other than {', '.join([p['variety_name'] for p in products])}."
+                    )
+
+            collected["recommended"] = True
+            collected["last_recommended_ids"] = [p["variety_name"] for p in products]
+            
+            try:
+                await save_lead_if_complete(phone, collected)
+            except Exception as save_err:
+                logger.error("Failed saving lead during recommendation", extra={"phone": phone, "error": str(save_err)})
+                
+        elif current_step == "STEP_8":
+            dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
+            dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
+            followup_prompt = FOLLOWUP_SYSTEM_PROMPT.format(
                 farmer_name=collected.get("name") or "किसान भाई",
+                dealer_data=dealer_data_str
+            )
+            reply_message = await ai_provider.complete(
+                system=followup_prompt,
+                user="Continue the conversation naturally and share dealer info if available"
+            )
+            collected["asked_followup"] = True
+            
+        elif current_step == "STEP_ADVISOR":
+            dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
+            dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
+            advisor_prompt = ADVISOR_SYSTEM_PROMPT.format(
+                farmer_name=collected.get("name") or "किसान भाई",
+                dealer_data=dealer_data_str,
                 crop=collected.get("crop"),
                 problem=collected.get("problem_summary")
             )
             reply_message = await ai_provider.complete(
-                system=no_prod_prompt,
-                user=f"Explain no products available for: {collected.get('crop')}"
+                system=advisor_prompt,
+                user=user_input
             )
+            
         else:
-            products_data_str = json.dumps(products, ensure_ascii=False)
-            recommend_prompt = RECOMMENDATION_SYSTEM_PROMPT.format(
+            phrasing_prompt = PHRASING_SYSTEM_PROMPT.format(
                 farmer_name=collected.get("name") or "किसान भाई",
-                state=collected.get("state"),
-                crop=collected.get("crop"),
-                problem=collected.get("problem_summary"),
-                products_data=products_data_str
+                user_message=user_input,
+                step_instruction=step_instruction,
+                profile_context=json.dumps(collected, ensure_ascii=False),
+                last_bot_question=last_bot_q
             )
-            
-            # Retry loop with no-invent guard
-            max_retries = 3
-            user_msg = f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}"
-            for attempt in range(max_retries):
-                reply_message = await ai_provider.complete(
-                    system=recommend_prompt,
-                    user=user_msg
-                )
-                if not check_for_fabricated_products(reply_message, products):
-                    break
-                logger.warning(f"Fabricated product name detected (attempt {attempt + 1}). Retrying...")
-                user_msg = (
-                    f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}. "
-                    f"IMPORTANT: You generated a fabricated product name. Do NOT invent or mention any product names "
-                    f"other than {', '.join([p['variety_name'] for p in products])}."
-                )
+            reply_message = await ai_provider.complete(
+                system=phrasing_prompt,
+                user=user_input or "Phrase the question for the farmer."
+            )
 
-        collected["recommended"] = True
-        collected["last_recommended_ids"] = [p["variety_name"] for p in products]
-        
-        try:
-            await save_lead_if_complete(phone, collected)
-        except Exception as save_err:
-            logger.error("Failed saving lead during recommendation", extra={"phone": phone, "error": str(save_err)})
-            
-    elif current_step == "STEP_8":
-        dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
-        dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
-        followup_prompt = FOLLOWUP_SYSTEM_PROMPT.format(
-            farmer_name=collected.get("name") or "किसान भाई",
-            dealer_data=dealer_data_str
-        )
-        reply_message = await ai_provider.complete(
-            system=followup_prompt,
-            user="Continue the conversation naturally and share dealer info if available"
-        )
-        
-    else:
-        phrasing_prompt = PHRASING_SYSTEM_PROMPT.format(
-            farmer_name=collected.get("name") or "किसान भाई",
-            user_message=user_input,
-            step_instruction=step_instruction,
-            profile_context=json.dumps(collected, ensure_ascii=False),
-            last_bot_question=last_bot_q
-        )
-        reply_message = await ai_provider.complete(
-            system=phrasing_prompt,
-            user=user_input or "Phrase the question for the farmer."
-        )
-
-    # No-Repeat Guard
+    # Hard Similarity-based No-Repeat Guard
     history_sent = collected.get("sent_messages_history", [])
+    last_3_sent = history_sent[-3:] if history_sent else []
     
-    def is_duplicate(msg: str) -> bool:
-        clean_msg = re.sub(r"[,\-\s\(\)\.\?।!]+", "", msg.lower())
-        for old in history_sent + ([last_bot_q] if last_bot_q else []):
-            clean_old = re.sub(r"[,\-\s\(\)\.\?।!]+", "", old.lower())
-            if clean_msg == clean_old:
+    def get_similarity(s1: str, s2: str) -> float:
+        from difflib import SequenceMatcher
+        import re
+        clean1 = re.sub(r"[,\-\s\(\)\.\?।!]+", "", s1.lower())
+        clean2 = re.sub(r"[,\-\s\(\)\.\?।!]+", "", s2.lower())
+        if not clean1 and not clean2:
+            return 1.0
+        if not clean1 or not clean2:
+            return 0.0
+        return SequenceMatcher(None, clean1, clean2).ratio()
+
+    def has_same_first_line(s1: str, s2: str) -> bool:
+        import re
+        lines1 = [re.sub(r"[,\-\s\(\)\.\?।!]+", "", l.lower()) for l in s1.split("\n") if l.strip()]
+        lines2 = [re.sub(r"[,\-\s\(\)\.\?•\*_]+", "", l.lower()) for l in s2.split("\n") if l.strip()]
+        if lines1 and lines2:
+            return lines1[0] == lines2[0]
+        return False
+
+    def is_near_duplicate(msg: str) -> bool:
+        for old in last_3_sent:
+            if get_similarity(msg, old) > 0.85:
+                return True
+            if has_same_first_line(msg, old):
                 return True
         return False
-        
-    if is_duplicate(reply_message):
-        try:
-            rephrase_prompt = REPHRASE_SYSTEM_PROMPT.format(message_to_rephrase=reply_message)
-            rephrased = await ai_provider.complete(
-                system=rephrase_prompt,
-                user="Rephrase the message so it has a different wording."
-            )
-            if not is_duplicate(rephrased):
-                reply_message = rephrased
-        except Exception as rephrase_err:
-            logger.error("Failed to rephrase duplicate message", extra={"error": str(rephrase_err)})
+
+    if is_near_duplicate(reply_message):
+        logger.warning(f"Near-duplicate reply detected. Attempting to generate a different response...")
+        for attempt in range(2):
+            try:
+                # Ask LLM to generate a different response / ask clarifying question differently / move forward
+                retry_prompt = f"""आप "Vigour मित्र" हैं। (Rephrase prompt)
+आप पहले ही किसान भाई को ये संदेश भेज चुके हैं: {[l[:30]+'...' for l in last_3_sent]}।
+आपकी वर्तमान प्रतिक्रिया '{reply_message}' पहले भेजे गए संदेशों से अत्यधिक मिलती-जुलती है।
+कृपया बिल्कुल अलग प्रतिक्रिया (शब्द और संदर्भ दोनों में) ग्रामीण हिंदी में जनरेट करें।
+यदि सलाह पहले ही दी जा चुकी है, तो आप फसल की सिंचाई, मिट्टी की स्थिति या हाल के मौसम के बारे में सवाल पूछ सकते हैं या बातचीत को प्यार से समाप्त कर सकते हैं।
+केवल किसान को भेजे जाने वाला शुद्ध संदेश लिखें (बिना किसी markdown के)।"""
+                rephrased = await ai_provider.complete(
+                    system=retry_prompt,
+                    user=f"Generate a different response than: {reply_message}"
+                )
+                if not is_near_duplicate(rephrased):
+                    reply_message = rephrased
+                    break
+            except Exception as rephrase_err:
+                logger.error("Failed to generate non-duplicate rephrased message", extra={"error": str(rephrase_err)})
 
     history_sent.append(reply_message)
-    if len(history_sent) > 4:
-        history_sent = history_sent[-4:]
+    if len(history_sent) > 5:
+        history_sent = history_sent[-5:]
     collected["sent_messages_history"] = history_sent
     collected["last_bot_question"] = reply_message
 
