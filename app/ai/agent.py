@@ -116,9 +116,9 @@ Fields to extract:
 - problem: The crop problem description (e.g. "पत्ते पीले", "कीड़े", "रोग", "बढ़वार नहीं"). IMPORTANT: If the user mentions a new/different problem than the current profile, extract it.
 
 Classification flags to extract:
-- is_unclear: boolean (true if the message is gibberish, completely ambiguous, or off-topic chatter like "aur kya chal raha hai").
-- out_of_scope_topic: string or null (set to a short description like "mandi price", "government scheme", "loan", "insurance" if the user is asking about government schemes, bank loans, insurance, live mandi prices, or other out-of-scope agricultural topics).
-- asks_chemical_dosage: boolean (true if the user is asking for specific chemical pesticide/fungicide names or exact spray dosages).
+- is_unclear: boolean (TRUE only if the message is genuinely meaningless gibberish, e.g. "asdfgh", random characters, or totally unrelated social chatter with no farming content. A SHORT answer that is a valid reply to the bot's last question, e.g. "40", "haan", "nahi", "ek mahina", a crop name, a number of days, is NOT unclear — set false. Any message containing a farming topic, e.g. fasal, khad, dawai, beej, kism, keede, bimari, paani, paidawar, etc. is NOT unclear — set false. When in doubt, set false - we prefer to answer, not to reject).
+- out_of_scope_topic: string or null (set to a topic string ONLY if the farmer is clearly asking specifically about government schemes, PM-Kisan, सब्सिडी, योजना, bank loans, लोन, insurance, बीमा, or LIVE market / mandi prices, आज का भाव/रेट. DO NOT set it for questions about which fertilizer, which medicine, which seed/variety, pest control, disease, irrigation, or yield — those are IN-SCOPE. Examples that must be null: "khad kon se dale", "dawai kon se dale", "kaunsa beej use kare", "konsi kism acchi hai", "keede lag gaye". Default: null).
+- asks_chemical_dosage: boolean (TRUE only if the farmer explicitly asks for an EXACT spray quantity/dose, e.g. "kitne ml per pump", "प्रति एकड़ कितनी मात्रा", "कितना ग्राम डालूँ". A general "kaunsi dawai daalu / which medicine" is NOT this — that should be answered with general guidance, NOT blocked. Default: false).
 
 Current Profile Status (Do not overwrite name, location, land, water unless corrected, but ALWAYS extract any new crop or crop problem mentioned in the latest message):
 {profile_status}
@@ -130,6 +130,7 @@ Conversation History:
 {history}
 
 IMPORTANT:
+- Most farmer questions about crops, seeds, fertilizer, medicine, pests, disease, water, and yield are IN-SCOPE and should NOT be flagged. Only flag the narrow cases above. Prefer answering over rejecting.
 - Return ONLY a valid JSON object. Do not include markdown fences, comments, or extra text.
 - If a field is not present in the message and not already in the profile, set it to null (or false for booleans).
 - Do not invent any values. Only extract what is clearly in the user's message.
@@ -376,6 +377,144 @@ def get_farmer_addressing(name: str):
         "ji": f"{clean_name} जी"
     }
 
+def is_empty_or_placeholder_problem(problem: Optional[str]) -> bool:
+    if not problem:
+        return True
+    p = problem.strip().lower()
+    placeholders = {
+        "none", "unknown", "null", "समस्या", "स्पष्ट लक्षण नहीं हैं", "no problem", 
+        "no_problem", "nothing", "na", "n/a", "undefined"
+    }
+    return p in placeholders
+
+def get_clean_farmer_name(name: Optional[str]) -> str:
+    if not name:
+        return "किसान"
+    name = name.strip()
+    if name in ["किसान", "किसान भाई", "farmer"]:
+        return "किसान"
+    # If the name ends with " भाई" or "भाई", strip it.
+    if name.endswith(" भाई"):
+        name = name[:-5].strip()
+    elif name.endswith("भाई"):
+        name = name[:-3].strip()
+    # Same for " जी" or "जी"
+    if name.endswith(" जी"):
+        name = name[:-3].strip()
+    elif name.endswith("जी"):
+        name = name[:-2].strip()
+    return name or "किसान"
+
+def is_obviously_in_scope(text: str) -> bool:
+    if not text:
+        return False
+    import re
+    clean = text.strip().lower()
+    
+    # Check out-of-scope keywords first
+    out_of_scope_keywords = [
+        "yojana", "scheme", "योजना", "subsid", "subsidy", "सब्सिडी",
+        "loan", "bank", "लोन", "बैंक",
+        "bima", "insurance", "बीमा",
+        "mandi", "rate", "paisa", "bhav", "bhau", "पैसा", "भाव", "रेट"
+    ]
+    if any(kw in clean for kw in out_of_scope_keywords):
+        return False
+        
+    in_scope_keywords = [
+        "khad", "fertilizer", "खाद", "urea", "यूरिया", "dap", "डीएपी",
+        "dawai", "dawa", "medicine", "pesticide", "दवाई", "दवा", "कीटनाशक", "spray", "छिड़काव",
+        "beej", "seed", "बीज",
+        "kism", "variety", "किस्म", "वैरायटी",
+        "fasal", "crop", "फसल",
+        "keeda", "keede", "pest", "insect", "कीड़ा", "कीड़े", "इल्ली", "माहू", "aphid", 
+        "सफेद मक्खी", "सफेद मक्की", "सफेद मखि", "safed makhi", "thrips", "थ्रिप्स", 
+        "तना छेदक", "tana chedak",
+        "bimari", "disease", "रोग", "बीमारी",
+        "paani", "water", "irrigation", "पानी", "सिंचाई",
+        "paidawar", "yield", "पैदावार", "उपज"
+    ]
+    # Crop keywords
+    crop_keywords = [
+        "soyabean", "soybean", "सोयाबीन", "dhan", "paddy", "धान", "makka", "maize", "corn", "मक्का", 
+        "dhaniya", "coriander", "धनिया", "chana", "gram", "चना", "gehu", "wheat", "गेहूँ", "मूंग", "mung"
+    ]
+    in_scope_keywords.extend(crop_keywords)
+    
+    if any(kw in clean for kw in in_scope_keywords):
+        return True
+        
+    common_short_replies = {
+        "haan", "yes", "no", "nahi", "ok", "okay", "haji", "ji", "जी", "हाँ", "नहीं", "हॉं"
+    }
+    clean_alnum = re.sub(r"[^\w\s]", "", clean).strip()
+    if clean_alnum in common_short_replies:
+        return True
+        
+    if clean_alnum.isdigit() and len(clean_alnum) <= 5:
+        return True
+        
+    return False
+
+def is_list_products_request(text: str) -> bool:
+    clean = text.strip().lower()
+    keywords = [
+        "saare product", "sare product", "all product", "product list", "product dikhao", 
+        "apne product", "apne beej", "beej list", "variety list", "varieties list", 
+        "kism list", "kis kism", "seed list", "बीज सूची", "सारे उत्पाद", "सारे प्रोडक्ट", 
+        "वैरायटी बताओ", "वैरायटी लिस्ट", "उत्पाद सूची", "कौन कौन से बीज", "क्या क्या बीज", 
+        "कौन से बीज हैं", "कौन से बीज उपलब्ध हैं", "kaun se beej", "konsi kism", "konsa beej",
+        "ke kism", "ki kism", "kism batao", "kisam batao", "ke kisam", "ki kisam",
+        "variety batao", "ke variety", "ki variety", "ke varieties", "ki varieties",
+        "beej batao", "product batao", "उत्पाद बताओ", "बीज बताओ", "किस्में बताओ", "किस्म बताओ",
+        "kis kism", "kon kism", "kaun kism", "konsi variety", "kaunsi variety"
+    ]
+    return any(kw in clean for kw in keywords)
+
+
+def format_product_list_response(farmer_name: str, crop: str, products: list, dealer_info: dict) -> str:
+    addr = get_farmer_addressing(farmer_name)
+    addr_bhai = addr["bhai"]
+    
+    if not products:
+        return f"माफ़ कीजिएगा {addr_bhai}, अभी हमारे पास {crop} के लिए कोई अनुमोदित Vigour बीज उपलब्ध नहीं हैं।"
+        
+    lines = [f"नमस्ते {addr_bhai}! हमारी {crop} फसल के लिए प्रमुख किस्मों (seeds) की जानकारी नीचे दी गई है:\n"]
+    for idx, p in enumerate(products, 1):
+        name = p.get("variety_name", "")
+        traits = p.get("key_traits", "")
+        duration = p.get("duration_days", "")
+        mrp = p.get("mrp_inr")
+        pack = p.get("pack_size", "")
+        
+        price_str = ""
+        if mrp is None or mrp == 0:
+            price_str = "दाम के लिए नज़दीकी डीलर से पूछें"
+        else:
+            price_str = f"₹{mrp}"
+            if pack:
+                price_str += f" ({pack})"
+                
+        lines.append(f"{idx}. *{name}*")
+        if traits:
+            lines.append(f"   • विशेषताएँ: {traits}")
+        if duration:
+            lines.append(f"   • समय सीमा: {duration} दिन")
+        lines.append(f"   • मूल्य: {price_str}\n")
+        
+    dealers = dealer_info.get("dealers", [])
+    if dealers:
+        lines.append("📍 *नज़दीकी डीलर की जानकारी:*")
+        for d in dealers[:2]:
+            lines.append(f"• {d['shop_name']} - {d['contact_name']} (फ़ोन: {d['phone']})")
+    elif dealer_info.get("sales_rep"):
+        lines.append(f"📍 हमारे सेल्स प्रतिनिधि से संपर्क करें: {dealer_info['sales_rep']}")
+    else:
+        lines.append(f"📍 अधिक जानकारी के लिए संपर्क करें: {dealer_info.get('company_contact', 'Vigour Seeds Support (+91 99999 99999)')}")
+        
+    lines.append(f"\nखेती-बाड़ी से जुड़े किसी भी अन्य सवाल के लिए आप यहाँ पूछ सकते हैं।")
+    return "\n".join(lines)
+
 def detect_and_handle_short_or_help(text: str, farmer_name: str, last_reply: str) -> str:
     import random
     import re
@@ -391,7 +530,7 @@ def detect_and_handle_short_or_help(text: str, farmer_name: str, last_reply: str
     help_queries = [
         "aur kya kya help", "aur kya help", "what can you do", "kya help", "kya madad", 
         "क्या मदद", "क्या सहायता", "क्या काम", "क्या कर सकते", "madad kya", "help kya",
-        "और क्या कर सकते", "और क्या मदद"
+        "और क्या कर सकते", "और क्या मदद", "kya jankari", "aur kya jankari", "क्या जानकारी", "और क्या जानकारी"
     ]
     if any(q in clean for q in help_queries):
         options = [
@@ -520,7 +659,7 @@ def handle_unclear_or_out_of_scope(extracted: dict, collected: dict, last_reply:
             
             if not crop:
                 return f"{addr_kisan}, आइए हम आपकी फसल से शुरुआत करते हैं। आप अभी अपने खेत में कौन सी फसल उगा रहे हैं?"
-            elif not problem:
+            elif not problem or is_empty_or_placeholder_problem(problem):
                 return f"ठीक है, चलिए आपकी {crop} फसल के बारे में बात करते हैं। {addr_bhai}, आपकी {crop} में अभी क्या समस्या या बीमारी आ रही है?"
             else:
                 return f"{addr_kisan}, आपकी {crop} फसल और {problem} की समस्या के बारे में हम सही Vigour बीज और डीलर की जानकारी दे सकते हैं। क्या आप डीलर का पता जानना चाहते हैं?"
@@ -685,7 +824,8 @@ async def tool_find_products(crop: str, problem: str, phone: Optional[str] = Non
         for pid in recommended_ids:
             p = await products_repo.get_by_id(pid)
             if p and p.approved_for_recommendation == "Y":
-                matched_products.append(p)
+                if p.crop.lower() == canonical_crop.lower():
+                    matched_products.append(p)
                 
     matched_products = matched_products[:3]
     
@@ -1135,6 +1275,10 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
     if is_greeting_message(user_input):
         extracted["is_unclear"] = False
 
+    if is_obviously_in_scope(user_input):
+        extracted["is_unclear"] = False
+        extracted["out_of_scope_topic"] = None
+
     # Resolve extracted values
     if extracted.get("name") and not collected.get("name"):
         collected["name"] = extracted["name"].strip()
@@ -1206,6 +1350,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
         
         if is_new_crop:
             collected["crop"] = new_crop_canonical
+            collected.pop("all_recommended_ids", None)
             if extracted.get("problem"):
                 collected["problem_summary"] = extracted["problem"]
             else:
@@ -1271,145 +1416,183 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
     reply_message = ""
     last_bot_q = collected.get("last_bot_question") or ""
     
-    unclear_reply = None
-    if current_step in ["STEP_6", "STEP_7", "STEP_8", "STEP_ADVISOR"]:
-        unclear_reply = handle_unclear_or_out_of_scope(extracted, collected, last_bot_q)
-    
-    # 0. Check for short/acknowledgement/help queries first
-    short_reply = None
-    if not unclear_reply:
-        if collected.get("recommended"):
-            short_reply = detect_and_handle_short_or_help(user_input, collected.get("name"), last_bot_q)
+    # Intercept list-products query
+    if current_step in ["STEP_6", "STEP_7", "STEP_8", "STEP_ADVISOR"] and is_list_products_request(user_input):
+        crop = collected.get("crop")
+        if not crop:
+            reply_message = "आप किस फसल के बीजों/उत्पादों के बारे में जानना चाहते हैं? (जैसे: सोयाबीन, धान, मक्का)"
         else:
-            # Check for open help queries globally
-            clean_input = user_input.strip().lower()
-            help_queries = [
-                "aur kya kya help", "aur kya help", "what can you do", "kya help", "kya madad", 
-                "क्या मदद", "क्या सहायता", "क्या काम", "क्या कर सकते", "madad kya", "help kya",
-                "और क्या कर सकते", "और क्या मदद"
-            ]
-            if any(q in clean_input for q in help_queries):
-                short_reply = detect_and_handle_short_or_help(user_input, collected.get("name"), last_bot_q)
-
-    if unclear_reply:
-        reply_message = unclear_reply
-    elif short_reply:
-        reply_message = short_reply
+            products = await tool_find_products(crop, "-", phone)
+            dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
+            reply_message = format_product_list_response(collected.get("name"), crop, products, dealer_info)
+            collected["recommended"] = True
+            collected["asked_followup"] = True
+            all_recs = collected.get("all_recommended_ids", [])
+            for p in products:
+                if p["variety_name"] not in all_recs:
+                    all_recs.append(p["variety_name"])
+            collected["all_recommended_ids"] = all_recs
+            collected["last_recommended_ids"] = [p["variety_name"] for p in products]
+            try:
+                await save_lead_if_complete(phone, collected)
+            except Exception as save_err:
+                logger.error("Failed saving lead during list product interception", extra={"phone": phone, "error": str(save_err)})
     else:
-        if current_step == "STEP_7":
-            if not collected.get("problem_clarified"):
-                clarify_prompt = CLARIFY_PROBLEM_SYSTEM_PROMPT.format(
-                    farmer_name=collected.get("name") or "किसान",
-                    crop=collected.get("crop"),
-                    problem=collected.get("problem_summary")
-                )
-                reply_message = await ai_provider.complete(
-                    system=clarify_prompt,
-                    user=user_input
-                )
-                collected["problem_clarified"] = True
+        unclear_reply = None
+        if current_step in ["STEP_6", "STEP_7", "STEP_8", "STEP_ADVISOR"]:
+            if is_obviously_in_scope(user_input):
+                if extracted.get("asks_chemical_dosage"):
+                    unclear_reply = handle_unclear_or_out_of_scope(extracted, collected, last_bot_q)
+                else:
+                    unclear_reply = None
             else:
-                products = await tool_find_products(collected["crop"], collected["problem_summary"], phone)
-                dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
-                dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
-                already_recommended_list = collected.get("all_recommended_ids", [])
-                
-                if len(products) == 0:
-                    no_prod_prompt = NO_PRODUCT_SYSTEM_PROMPT.format(
-                        farmer_name=collected.get("name") or "किसान",
+                unclear_reply = handle_unclear_or_out_of_scope(extracted, collected, last_bot_q)
+        
+        # 0. Check for short/acknowledgement/help queries first
+        short_reply = None
+        if not unclear_reply:
+            if collected.get("recommended"):
+                short_reply = detect_and_handle_short_or_help(user_input, collected.get("name"), last_bot_q)
+            else:
+                # Check for open help queries globally
+                clean_input = user_input.strip().lower()
+                help_queries = [
+                    "aur kya kya help", "aur kya help", "what can you do", "kya help", "kya madad", 
+                    "क्या मदद", "क्या सहायता", "क्या काम", "क्या कर सकते", "madad kya", "help kya",
+                    "और क्या कर सकते", "और क्या मदद", "kya jankari", "aur kya jankari", "क्या जानकारी", "और क्या जानकारी"
+                ]
+                if any(q in clean_input for q in help_queries):
+                    short_reply = detect_and_handle_short_or_help(user_input, collected.get("name"), last_bot_q)
+
+        if unclear_reply:
+            reply_message = unclear_reply
+        elif short_reply:
+            reply_message = short_reply
+        else:
+            if current_step == "STEP_7":
+                if not collected.get("problem_clarified"):
+                    prob_summary = collected.get("problem_summary")
+                    if is_empty_or_placeholder_problem(prob_summary):
+                        prob_summary = "समस्या"
+                    clarify_prompt = CLARIFY_PROBLEM_SYSTEM_PROMPT.format(
+                        farmer_name=get_clean_farmer_name(collected.get("name")),
                         crop=collected.get("crop"),
-                        problem=collected.get("problem_summary"),
-                        dealer_data=dealer_data_str
+                        problem=prob_summary
                     )
                     reply_message = await ai_provider.complete(
-                        system=no_prod_prompt,
-                        user=f"Explain no products available for: {collected.get('crop')}"
+                        system=clarify_prompt,
+                        user=user_input
                     )
+                    collected["problem_clarified"] = True
                 else:
-                    products_data_str = json.dumps(products, ensure_ascii=False)
-                    recommend_prompt = RECOMMENDATION_SYSTEM_PROMPT.format(
-                        farmer_name=collected.get("name") or "किसान",
-                        state=collected.get("state"),
-                        district=collected.get("district"),
-                        crop=collected.get("crop"),
-                        problem=collected.get("problem_summary"),
-                        products_data=products_data_str,
-                        dealer_data=dealer_data_str,
-                        already_recommended=json.dumps(already_recommended_list, ensure_ascii=False)
-                    )
+                    products = await tool_find_products(collected["crop"], collected["problem_summary"], phone)
+                    dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
+                    dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
+                    already_recommended_list = collected.get("all_recommended_ids", [])
                     
-                    # Retry loop with no-invent guard
-                    max_retries = 3
-                    user_msg = f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}"
-                    for attempt in range(max_retries):
+                    prob_summary = collected.get("problem_summary")
+                    if is_empty_or_placeholder_problem(prob_summary):
+                        prob_summary = "समस्या"
+                    
+                    if len(products) == 0:
+                        no_prod_prompt = NO_PRODUCT_SYSTEM_PROMPT.format(
+                            farmer_name=get_clean_farmer_name(collected.get("name")),
+                            crop=collected.get("crop"),
+                            problem=prob_summary,
+                            dealer_data=dealer_data_str
+                        )
                         reply_message = await ai_provider.complete(
-                            system=recommend_prompt,
-                            user=user_msg
+                            system=no_prod_prompt,
+                            user=f"Explain no products available for: {collected.get('crop')}"
                         )
-                        if not check_for_fabricated_products(reply_message, products):
-                            break
-                        logger.warning(f"Fabricated product name detected (attempt {attempt + 1}). Retrying...")
-                        user_msg = (
-                            f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}. "
-                            f"IMPORTANT: You generated a fabricated product name. Do NOT invent or mention any product names "
-                            f"other than {', '.join([p['variety_name'] for p in products])}."
+                    else:
+                        products_data_str = json.dumps(products, ensure_ascii=False)
+                        recommend_prompt = RECOMMENDATION_SYSTEM_PROMPT.format(
+                            farmer_name=get_clean_farmer_name(collected.get("name")),
+                            state=collected.get("state"),
+                            district=collected.get("district"),
+                            crop=collected.get("crop"),
+                            problem=prob_summary,
+                            products_data=products_data_str,
+                            dealer_data=dealer_data_str,
+                            already_recommended=json.dumps(already_recommended_list, ensure_ascii=False)
                         )
+                        
+                        # Retry loop with no-invent guard
+                        max_retries = 3
+                        user_msg = f"Recommend for: {collected.get('crop')}, {prob_summary}"
+                        for attempt in range(max_retries):
+                            reply_message = await ai_provider.complete(
+                                system=recommend_prompt,
+                                user=user_msg
+                            )
+                            if not check_for_fabricated_products(reply_message, products):
+                                break
+                            logger.warning(f"Fabricated product name detected (attempt {attempt + 1}). Retrying...")
+                            user_msg = (
+                                f"Recommend for: {collected.get('crop')}, {prob_summary}. "
+                                f"IMPORTANT: You generated a fabricated product name. Do NOT invent or mention any product names "
+                                f"other than {', '.join([p['variety_name'] for p in products])}."
+                            )
 
-                collected["recommended"] = True
-                collected["asked_followup"] = True
-                collected["last_recommended_ids"] = [p["variety_name"] for p in products]
-                
-                all_recs = collected.get("all_recommended_ids", [])
-                for p in products:
-                    if p["variety_name"] not in all_recs:
-                        all_recs.append(p["variety_name"])
-                collected["all_recommended_ids"] = all_recs
-                
-                try:
-                    await save_lead_if_complete(phone, collected)
-                except Exception as save_err:
-                    logger.error("Failed saving lead during recommendation", extra={"phone": phone, "error": str(save_err)})
+                    collected["recommended"] = True
+                    collected["asked_followup"] = True
+                    collected["last_recommended_ids"] = [p["variety_name"] for p in products]
                     
-        elif current_step == "STEP_8":
-            dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
-            dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
-            followup_prompt = FOLLOWUP_SYSTEM_PROMPT.format(
-                farmer_name=collected.get("name") or "किसान",
-                dealer_data=dealer_data_str
-            )
-            reply_message = await ai_provider.complete(
-                system=followup_prompt,
-                user="Continue the conversation naturally and share dealer info if available"
-            )
-            collected["asked_followup"] = True
-            
-        elif current_step == "STEP_ADVISOR":
-            dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
-            dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
-            advisor_prompt = ADVISOR_SYSTEM_PROMPT.format(
-                farmer_name=collected.get("name") or "किसान",
-                dealer_data=dealer_data_str,
-                crop=collected.get("crop"),
-                problem=collected.get("problem_summary"),
-                already_recommended=json.dumps(collected.get("all_recommended_ids", []), ensure_ascii=False)
-            )
-            reply_message = await ai_provider.complete(
-                system=advisor_prompt,
-                user=user_input
-            )
-            
-        else:
-            phrasing_prompt = PHRASING_SYSTEM_PROMPT.format(
-                farmer_name=collected.get("name") or "किसान",
-                user_message=user_input,
-                step_instruction=step_instruction,
-                profile_context=json.dumps(collected, ensure_ascii=False),
-                last_bot_question=last_bot_q
-            )
-            reply_message = await ai_provider.complete(
-                system=phrasing_prompt,
-                user=user_input or "Phrase the question for the farmer."
-            )
+                    all_recs = collected.get("all_recommended_ids", [])
+                    for p in products:
+                        if p["variety_name"] not in all_recs:
+                            all_recs.append(p["variety_name"])
+                    collected["all_recommended_ids"] = all_recs
+                    
+                    try:
+                        await save_lead_if_complete(phone, collected)
+                    except Exception as save_err:
+                        logger.error("Failed saving lead during recommendation", extra={"phone": phone, "error": str(save_err)})
+                        
+            elif current_step == "STEP_8":
+                dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
+                dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
+                followup_prompt = FOLLOWUP_SYSTEM_PROMPT.format(
+                    farmer_name=get_clean_farmer_name(collected.get("name")),
+                    dealer_data=dealer_data_str
+                )
+                reply_message = await ai_provider.complete(
+                    system=followup_prompt,
+                    user="Continue the conversation naturally and share dealer info if available"
+                )
+                collected["asked_followup"] = True
+                
+            elif current_step == "STEP_ADVISOR":
+                dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
+                dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
+                prob_summary = collected.get("problem_summary")
+                if is_empty_or_placeholder_problem(prob_summary):
+                    prob_summary = "समस्या"
+                advisor_prompt = ADVISOR_SYSTEM_PROMPT.format(
+                    farmer_name=get_clean_farmer_name(collected.get("name")),
+                    dealer_data=dealer_data_str,
+                    crop=collected.get("crop"),
+                    problem=prob_summary,
+                    already_recommended=json.dumps(collected.get("all_recommended_ids", []), ensure_ascii=False)
+                )
+                reply_message = await ai_provider.complete(
+                    system=advisor_prompt,
+                    user=user_input
+                )
+                
+            else:
+                phrasing_prompt = PHRASING_SYSTEM_PROMPT.format(
+                    farmer_name=get_clean_farmer_name(collected.get("name")),
+                    user_message=user_input,
+                    step_instruction=step_instruction,
+                    profile_context=json.dumps(collected, ensure_ascii=False),
+                    last_bot_question=last_bot_q
+                )
+                reply_message = await ai_provider.complete(
+                    system=phrasing_prompt,
+                    user=user_input or "Phrase the question for the farmer."
+                )
 
     # Hard Similarity-based No-Repeat Guard
     history_sent = collected.get("sent_messages_history", [])

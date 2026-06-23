@@ -1545,7 +1545,7 @@ async def test_no_repeated_pitches():
     # The AI should recommend Vigour 9560 (the only remaining approved soybean product), NOT Vigour 335.
     mock_responses = make_mock_complete(
         {},
-        "राजेश भाई, सोयाबीन में इल्ली के लिए खेत साफ रखें। पहले हमने Vigour 335 की बात की थी, अब आप Vigour 9560 बीज बोने पर विचार करें जो कि कम समय में तैयार होता है।"
+        "राजेश भाई, सोयाबीन में इल्ली के लिए खेत साफ रखें। पहले हमने Vigour 335 की बात की थी, अब आप Vigour 9560 बीज बोने पर विचार करें जो कि कम समय में तैयार होता है。"
     )
     
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
@@ -1621,3 +1621,277 @@ async def test_conversational_greeting_onboarding_and_whitelist():
         last_msg2 = mock_whatsapp_client.sent_messages[-1]["body"]
         assert "Vigour मित्र" in last_msg2
         assert "नमस्ते" in last_msg2
+
+
+@pytest.mark.asyncio
+async def test_sc_40_crop_stage_reply():
+    phone = "919000000091"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "name": "महिपाल",
+            "district": "Dhar",
+            "state": "Madhya Pradesh",
+            "total_land": 10.0,
+            "water_source": "ट्यूबवेल",
+            "crop": "Soybean"
+        }
+    })
+    # Mock LLM returns is_unclear = True (simulating a false positive)
+    # Our Python safety net should override this and treat it as in-scope!
+    mock_responses = make_mock_complete(
+        {"is_unclear": True, "out_of_scope_topic": "unknown", "asks_chemical_dosage": False, "problem": None},
+        "आपकी सोयाबीन फसल अभी कितने दिन की है?"
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.test_40",
+            from_phone=phone,
+            type="text",
+            text="40",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "मुझे समझ नहीं आया" not in last_msg
+        assert "माफ़" not in last_msg
+
+
+@pytest.mark.asyncio
+async def test_sc_khad_advice():
+    phone = "919000000092"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "name": "महिपाल",
+            "district": "Dhar",
+            "state": "Madhya Pradesh",
+            "total_land": 10.0,
+            "water_source": "ट्यूबवेल",
+            "crop": "Soybean",
+            "problem_summary": "खाद प्रबंधन"
+        }
+    })
+    mock_responses = make_mock_complete(
+        {"is_unclear": False, "out_of_scope_topic": None, "asks_chemical_dosage": False},
+        "सोयाबीन में आप DAP और यूरिया डाल सकते हैं।"
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.test_khad",
+            from_phone=phone,
+            type="text",
+            text="khad kon se dale",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "DAP" in last_msg or "यूरिया" in last_msg
+
+
+@pytest.mark.asyncio
+async def test_sc_dawai_advice():
+    phone = "919000000093"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "name": "महिपाल",
+            "district": "Dhar",
+            "state": "Madhya Pradesh",
+            "total_land": 10.0,
+            "water_source": "ट्यूबवेल",
+            "crop": "Soybean",
+            "problem_summary": "पीला मोज़ेक वायरस"
+        }
+    })
+    mock_responses = make_mock_complete(
+        {"is_unclear": False, "out_of_scope_topic": None, "asks_chemical_dosage": False},
+        "पीला मोज़ेक के लिए आप सामान्य नियंत्रण अपनाएं और सही दवा की मात्रा डीलर से पूछें।"
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.test_dawai",
+            from_phone=phone,
+            type="text",
+            text="dawai kon se dale",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "माफ़ कीजिएगा" not in last_msg
+
+
+@pytest.mark.asyncio
+async def test_sc_list_products_soybean():
+    phone = "919000000094"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "name": "महिपाल",
+            "district": "Dhar",
+            "state": "Madhya Pradesh",
+            "total_land": 10.0,
+            "water_source": "ट्यूबवेल",
+            "crop": "Soybean"
+        }
+    })
+    mock_responses = make_mock_complete(
+        {"is_unclear": False, "out_of_scope_topic": None, "asks_chemical_dosage": False},
+        "नमस्ते"
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.test_soybean_seeds",
+            from_phone=phone,
+            type="text",
+            text="soybean ke acchi kism batao",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Vigour 9560" in last_msg or "Vigour 335" in last_msg
+        assert "Vigour Premium Gold" not in last_msg
+
+
+@pytest.mark.asyncio
+async def test_sc_crop_switch_variety_guard():
+    phone = "919000000095"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "name": "महिपाल",
+            "district": "Dhar",
+            "state": "Madhya Pradesh",
+            "total_land": 10.0,
+            "water_source": "ट्यूबवेल",
+            "crop": "Dhan",
+            "recommended": True,
+            "all_recommended_ids": ["Vigour Premium Gold"]
+        }
+    })
+    mock_responses = make_mock_complete(
+        {"crop": "Soybean", "is_unclear": False, "out_of_scope_topic": None, "asks_chemical_dosage": False},
+        "नमस्ते"
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.test_switch",
+            from_phone=phone,
+            type="text",
+            text="Mujhe soybean ke kism batao",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Vigour 9560" in last_msg or "Vigour 335" in last_msg
+        assert "Vigour Premium Gold" not in last_msg
+
+
+@pytest.mark.asyncio
+async def test_sc_help_capabilities():
+    phone = "919000000096"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "name": "महिपाल",
+            "district": "Dhar",
+            "state": "Madhya Pradesh",
+            "total_land": 10.0,
+            "water_source": "ट्यूबवेल",
+            "crop": "Soybean"
+        }
+    })
+    mock_responses = make_mock_complete(
+        {"is_unclear": False, "out_of_scope_topic": None, "asks_chemical_dosage": False},
+        "नमस्ते"
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.test_help",
+            from_phone=phone,
+            type="text",
+            text="tum aur kya jankari de sakte ho",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "फसल की समस्या" in last_msg or "बीमारी" in last_msg or "खाद-पानी" in last_msg
+
+
+@pytest.mark.asyncio
+async def test_sc_pm_kisan_out_of_scope():
+    phone = "919000000097"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "name": "महिपाल",
+            "district": "Dhar",
+            "state": "Madhya Pradesh",
+            "total_land": 10.0,
+            "water_source": "ट्यूबवेल",
+            "crop": "Soybean"
+        }
+    })
+    mock_responses = make_mock_complete(
+        {"is_unclear": False, "out_of_scope_topic": "government scheme", "asks_chemical_dosage": False},
+        "योजना के बारे में जानकारी नहीं है"
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.test_scheme",
+            from_phone=phone,
+            type="text",
+            text="PM Kisan ka paisa kab aayega",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert any(word in last_msg for word in ["योजनाओं", "लोन", "बीमा", "मंडी", "सटीक डेटा"])
+
+
+
+@pytest.mark.asyncio
+async def test_sc_placeholder_problem_handling():
+    phone = "919000000098"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "name": "महिपाल",
+            "district": "Dhar",
+            "state": "Madhya Pradesh",
+            "total_land": 10.0,
+            "water_source": "ट्यूबवेल",
+            "crop": "Soybean",
+            "problem_summary": "स्पष्ट लक्षण नहीं हैं"
+        }
+    })
+    mock_responses = make_mock_complete(
+        {"is_unclear": True, "out_of_scope_topic": None, "asks_chemical_dosage": False},
+        "मुझे समझ नहीं आया"
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.test_placeholder",
+            from_phone=phone,
+            type="text",
+            text="xyzabc",
+            timestamp="1718563800"
+        )
+        session = await sessions_repo.get(phone)
+        collected = session.collected_json
+        collected["clarify_attempts"] = 2
+        await sessions_repo.upsert(phone, {"collected_json": collected})
+        
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "स्पष्ट लक्षण नहीं हैं" not in last_msg
+        assert "क्या समस्या या बीमारी आ रही है" in last_msg
+
