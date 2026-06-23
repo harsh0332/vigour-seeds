@@ -53,7 +53,7 @@ AGENT_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour Se
 - ज़्यादा से ज़्यादा 3 प्रोडक्ट। व्हाट्सएप पर छोटा और साफ-सुथरा रखें (पैराग्राफ या लंबी लिस्ट न लिखें)।
 - हर प्रोडक्ट के लिए केवल 2 लाइन का विवरण दें:
   • नाम + 1 लाइन में फायदा/कारण + मात्रा (यदि उपलब्ध हो, अन्यथा 'सही मात्रा और रेट के लिए नज़दीकी डीलर से ज़रूर पूछें')
-  • यदि प्रोडक्ट की कीमत (mrp_inr) null या 0 है, तो स्पष्ट कहें कि "रेट की जानकारी के लिए अपने नज़दीकी डीलर से संपर्क करें"
+  • यदि प्रोडक्ट की कीमत (mrp_inr) null या 0 है, तो दाम बताने के बजाय कहें "दाम के लिए नज़दीकी डीलर से पूछें" (अपने मन से कोई दाम न बनाएँ)।
 - कोई भी दवा/खुराक डालने से पहले डीलर या विशेषज्ञ से पुष्टि करने की सलाह ज़रूर दें।
 
 प्रोडक्ट सुझाने के बाद:
@@ -133,15 +133,211 @@ async def get_conversation_history(phone: str, limit: int = 15) -> List[Dict[str
         )
         return []
 
+CROP_SYNONYM_MAP = {
+    # Maize
+    "maize": "Maize",
+    "corn": "Maize",
+    "makka": "Maize",
+    "makki": "Maize",
+    "मक्का": "Maize",
+    "bhutta": "Maize",
+    "bhutta / corn": "Maize",
+    
+    # Soybean
+    "soybean": "Soybean",
+    "soyabean": "Soybean",
+    "soya": "Soybean",
+    "सोयाबीन": "Soybean",
+    "सोया": "Soybean",
+    
+    # Paddy
+    "paddy": "Paddy",
+    "rice": "Paddy",
+    "dhan": "Paddy",
+    "chawal": "Paddy",
+    "धान": "Paddy",
+    "चावल": "Paddy",
+    "धान / चावल": "Paddy",
+    
+    # Wheat
+    "wheat": "Wheat",
+    "gehu": "Wheat",
+    "gehoon": "Wheat",
+    "gehuan": "Wheat",
+    "गेहूं": "Wheat",
+    "गेहूँ": "Wheat",
+    "kanak": "Wheat",
+    
+    # Okra
+    "okra": "Okra",
+    "bhindi": "Okra",
+    "bhendi": "Okra",
+    "भिंडी": "Okra",
+    "भिन्डी": "Okra",
+    
+    # Hot Pepper / Chilli
+    "hot pepper": "Hot Pepper (Chilli)",
+    "chilli": "Hot Pepper (Chilli)",
+    "chili": "Hot Pepper (Chilli)",
+    "mirch": "Hot Pepper (Chilli)",
+    "mirchi": "Hot Pepper (Chilli)",
+    "hot pepper (chilli)": "Hot Pepper (Chilli)",
+    "pepper": "Hot Pepper (Chilli)",
+    "मिर्च": "Hot Pepper (Chilli)",
+    "मिर्ची": "Hot Pepper (Chilli)",
+    
+    # Chickpea / Chana
+    "chickpea": "Chickpea (Chana)",
+    "chana": "Chickpea (Chana)",
+    "channa": "Chickpea (Chana)",
+    "gram": "Chickpea (Chana)",
+    "bengal gram": "Chickpea (Chana)",
+    "चना": "Chickpea (Chana)",
+    
+    # Tomato
+    "tomato": "Tomato",
+    "tamatar": "Tomato",
+    "टमाटर": "Tomato",
+    
+    # Bajra
+    "bajra": "Bajra (Pearl Millet)",
+    "bajra (pearl millet)": "Bajra (Pearl Millet)",
+    "pearl millet": "Bajra (Pearl Millet)",
+    "बाजरा": "Bajra (Pearl Millet)",
+    
+    # Tur
+    "tur": "Tur (Arhar)",
+    "arhar": "Tur (Arhar)",
+    "tuar": "Tur (Arhar)",
+    "अरहर": "Tur (Arhar)",
+    "अरहर / तुर": "Tur (Arhar)",
+    
+    # Cumin
+    "cumin": "Cumin (Jeera)",
+    "jeera": "Cumin (Jeera)",
+    "zira": "Cumin (Jeera)",
+    "जीरा": "Cumin (Jeera)",
+    
+    # Mustard
+    "mustard": "Mustard",
+    "sarso": "Mustard",
+    "sarson": "Mustard",
+    "rai": "Mustard",
+    "सरसों": "Mustard",
+    
+    # Sesame
+    "sesame": "Sesame (Til)",
+    "til": "Sesame (Til)",
+    "तिल": "Sesame (Til)",
+    
+    # Sunflower
+    "sunflower": "Sunflower",
+    "सूरजमुखी": "Sunflower",
+    
+    # Moong
+    "green gram": "Green Gram (Moong)",
+    "moong": "Green Gram (Moong)",
+    "मूंग": "Green Gram (Moong)",
+    
+    # Urad
+    "black gram": "Black Gram (Urad)",
+    "urad": "Black Gram (Urad)",
+    "उड़द": "Black Gram (Urad)",
+    
+    # Jowar
+    "sorghum": "Sorghum (Jowar)",
+    "jowar": "Sorghum (Jowar)",
+    "ज्वार": "Sorghum (Jowar)",
+    
+    # Brinjal
+    "brinjal": "Brinjal (Baingan)",
+    "baingan": "Brinjal (Baingan)",
+    "बैंगन": "Brinjal (Baingan)",
+    
+    # Bitter Gourd
+    "bitter gourd": "Bitter Gourd (Karela)",
+    "karela": "Bitter Gourd (Karela)",
+    "करेला": "Bitter Gourd (Karela)",
+    
+    # Bottle Gourd
+    "bottle gourd": "Bottle Gourd (Lauki)",
+    "lauki": "Bottle Gourd (Lauki)",
+    "लौकी": "Bottle Gourd (Lauki)",
+    
+    # Ridge Gourd
+    "ridge gourd": "Ridge Gourd (Turai)",
+    "turai": "Ridge Gourd (Turai)",
+    "तुरई": "Ridge Gourd (Turai)",
+    
+    # Sponge Gourd
+    "sponge gourd": "Sponge Gourd",
+    "gilki": "Sponge Gourd",
+    "गिल्की": "Sponge Gourd",
+    
+    # Watermelon
+    "watermelon": "Watermelon (Tarbooj)",
+    "tarbooj": "Watermelon (Tarbooj)",
+    "तरबूज": "Watermelon (Tarbooj)",
+    
+    # Muskmelon
+    "muskmelon": "Muskmelon (Kharbuja)",
+    "kharbuja": "Muskmelon (Kharbuja)",
+    "खरबूजा": "Muskmelon (Kharbuja)"
+}
+
+CANONICAL_PRODUCT_CROP_MAP = {
+    "Maize / Corn": "Maize",
+    "Paddy / Rice": "Paddy",
+    "Okra (Bhindi)": "Okra",
+    "Hot Pepper (Mirchi)": "Hot Pepper (Chilli)",
+}
+
+def normalize_crop_term(crop_term: str) -> str:
+    if not crop_term:
+        return ""
+    term_clean = crop_term.strip().lower()
+    
+    # Sort synonym keys by length descending to match longer strings first
+    for syn_key, canonical in sorted(CROP_SYNONYM_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+        if syn_key in term_clean or term_clean in syn_key:
+            return canonical
+            
+    return crop_term
+
 async def find_crop_by_name(name: str) -> Optional[Any]:
     if not name:
         return None
-    name_clean = name.strip().lower()
+    
+    norm_name = normalize_crop_term(name)
     crops = await crops_repo.list_in_catalog()
+    
+    name_clean = name.strip().lower()
+    norm_clean = norm_name.strip().lower()
+    
+    product_to_crop_table = {
+        "Maize": ["Maize / Corn", "Maize"],
+        "Paddy": ["Paddy / Rice", "Paddy"],
+        "Okra": ["Okra (Bhindi)", "Okra"],
+        "Hot Pepper (Chilli)": ["Hot Pepper (Mirchi)", "Hot Pepper (Chilli)", "Chilli"],
+    }
+    
     for crop in crops:
-        if (crop.crop_name_en and name_clean in crop.crop_name_en.lower()) or \
-           (crop.crop_name_hi and name_clean in crop.crop_name_hi.lower()):
+        crop_en = (crop.crop_name_en or "").lower()
+        crop_hi = (crop.crop_name_hi or "").lower()
+        
+        if (crop_en and (norm_clean in crop_en or crop_en in norm_clean)) or \
+           (crop_hi and (norm_clean in crop_hi or crop_hi in norm_clean)):
             return crop
+            
+        if (crop_en and (name_clean in crop_en or crop_en in name_clean)) or \
+           (crop_hi and (name_clean in crop_hi or crop_hi in name_clean)):
+            return crop
+            
+        if norm_name in product_to_crop_table:
+            for alt in product_to_crop_table[norm_name]:
+                if alt.lower() in crop_en or crop_en in alt.lower():
+                    return crop
+                    
     return None
 
 async def tool_normalize_location(text: str) -> dict:
@@ -167,10 +363,21 @@ async def tool_find_products(crop: str, problem: str, phone: Optional[str] = Non
             irrigation_type = "Irrigated" if session.collected_json.get("total_land") else "Rainfed"
 
     # Try mapping crop name to canonical
-    canonical_crop = crop
+    # 1. Use the synonym map to resolve to standard name
+    canonical_crop = normalize_crop_term(crop)
+    
+    # 2. Or look up in Crops table
     crop_row = await find_crop_by_name(crop)
     if crop_row:
-        canonical_crop = crop_row.crop_name_en
+        canonical_crop = CANONICAL_PRODUCT_CROP_MAP.get(crop_row.crop_name_en, crop_row.crop_name_en)
+    else:
+        # If we got a normalized name, try to lookup that normalized name in Crops table
+        crop_row_norm = await find_crop_by_name(canonical_crop)
+        if crop_row_norm:
+            canonical_crop = CANONICAL_PRODUCT_CROP_MAP.get(crop_row_norm.crop_name_en, crop_row_norm.crop_name_en)
+            
+    # As a final safeguard, apply the map one more time
+    canonical_crop = CANONICAL_PRODUCT_CROP_MAP.get(canonical_crop, canonical_crop)
 
     rule = await rules_repo.match(canonical_crop, stage, problem, irrigation_type, region)
     if not rule and problem != "-":
@@ -477,6 +684,15 @@ async def respond(phone: str, message: NormalizedMessage) -> str:
                 return "नमस्ते 🙏 आपकी मदद के लिए हमारे कृषि विशेषज्ञ जल्द ही आपसे संपर्क करेंगे।"
 
         action = data.get("action")
+        logger.info(
+            "Agent parsed action in loop iteration",
+            extra={
+                "phone": phone,
+                "action": action,
+                "action_args": data.get("args"),
+                "loop_count": loop_count
+            }
+        )
         
         if action == "reply":
             msg = data.get("message") or ""
@@ -509,6 +725,16 @@ async def respond(phone: str, message: NormalizedMessage) -> str:
             crop_arg = args.get("crop") or ""
             prob_arg = args.get("problem") or ""
             res = await tool_find_products(crop_arg, prob_arg, phone)
+            logger.info(
+                "find_products execution result",
+                extra={
+                    "phone": phone,
+                    "crop_arg": crop_arg,
+                    "prob_arg": prob_arg,
+                    "result_count": len(res),
+                    "raw_result": res
+                }
+            )
             turn_messages.append(f"Agent Action: {cleaned_response}")
             turn_messages.append(f"Tool Result: {json.dumps(res, ensure_ascii=False)}")
             loop_count += 1

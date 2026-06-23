@@ -359,3 +359,178 @@ async def test_conversational_json_parsing_and_reprompt():
         assert mock_complete.call_count == 2
         assert len(mock_whatsapp_client.sent_messages) > 0
         assert "नमस्ते!" in mock_whatsapp_client.sent_messages[-1]["body"]
+
+@pytest.mark.asyncio
+async def test_conversational_maize_recommendation_and_translation():
+    """
+    Test Scenario 8: Verify that Hinglish/Hindi crop name "Makka"/"मक्का" resolves to "Maize",
+    returns the approved maize products, correctly handles null mrp_inr, and recommends VIGOUR 60A90.
+    """
+    phone = "919000000017"
+    
+    # 1. Seed crops table with Maize / Corn
+    in_memory_db.tables["crops"].append({
+        "crop_id": "CR02",
+        "crop_name_hi": "मक्का",
+        "crop_name_en": "Maize / Corn",
+        "in_catalog": "Y"
+    })
+    
+    # 2. Seed 7 maize products (5 approved, 2 unapproved)
+    maize_products = [
+        {
+            "product_id": "MZE001",
+            "variety_name": "VIGOUR 60A90",
+            "crop": "Maize",
+            "approved_for_recommendation": "Y",
+            "mrp_inr": None,
+            "pest_disease_tolerance": "Highly tolerant to TLB & stem borer",
+            "target_problem_fit": "stem borer prone areas",
+            "pack_size": "4 kg",
+            "duration_days": "120-125",
+            "key_traits": "Shelling 84-85%; stay green"
+        },
+        {
+            "product_id": "MZE002",
+            "variety_name": "VIGOUR 30A90",
+            "crop": "Maize",
+            "approved_for_recommendation": "Y",
+            "mrp_inr": None,
+            "pest_disease_tolerance": "Standard",
+            "target_problem_fit": "early maturity",
+            "pack_size": "4 kg",
+            "duration_days": "115-120",
+            "key_traits": "stay green"
+        },
+        {
+            "product_id": "MZE003",
+            "variety_name": "VIGOUR 555",
+            "crop": "Maize",
+            "approved_for_recommendation": "Y",
+            "mrp_inr": None,
+            "pest_disease_tolerance": "Tolerant to leaf blight",
+            "target_problem_fit": "long-duration rabi",
+            "pack_size": "4 kg",
+            "duration_days": "145-150",
+            "key_traits": "stay green"
+        },
+        {
+            "product_id": "MZE004",
+            "variety_name": "VIGOUR 007",
+            "crop": "Maize",
+            "approved_for_recommendation": "Y",
+            "mrp_inr": None,
+            "pest_disease_tolerance": "Standard",
+            "target_problem_fit": "lodging-prone",
+            "pack_size": "4 kg",
+            "duration_days": "115-120",
+            "key_traits": "lodging resistant"
+        },
+        {
+            "product_id": "MZE005",
+            "variety_name": "VIGOUR AAMUKTHA",
+            "crop": "Maize",
+            "approved_for_recommendation": "Y",
+            "mrp_inr": None,
+            "pest_disease_tolerance": "Standard",
+            "target_problem_fit": "lodging-prone",
+            "pack_size": "4 kg",
+            "duration_days": "115-120",
+            "key_traits": "lodging resistant"
+        },
+        {
+            "product_id": "MZE006",
+            "variety_name": "VIGOUR 50x50",
+            "crop": "Maize",
+            "approved_for_recommendation": "N",
+            "mrp_inr": None,
+            "pest_disease_tolerance": "TBD",
+            "target_problem_fit": "TBD",
+            "pack_size": "4 kg",
+            "duration_days": "TBD",
+            "key_traits": "TBD"
+        },
+        {
+            "product_id": "MZE007",
+            "variety_name": "VIGOUR WHITE COBRA",
+            "crop": "Maize",
+            "approved_for_recommendation": "N",
+            "mrp_inr": None,
+            "pest_disease_tolerance": "TBD",
+            "target_problem_fit": "white corn",
+            "pack_size": "4 kg",
+            "duration_days": "TBD",
+            "key_traits": "white grain"
+        }
+    ]
+    for p in maize_products:
+        in_memory_db.tables["products"].append(p)
+
+    # 3. Seed recommendation rules
+    in_memory_db.tables["recommendation_rules"].append({
+        "rule_id": "R031",
+        "crop": "Maize",
+        "crop_stage": "sowing",
+        "problem_category": "drought_prone",
+        "irrigation_type": "Rainfed/Irrigated",
+        "region": "MP",
+        "recommended_product_ids": "MZE001",
+        "next_action": "send_recommendation",
+        "human_review_required": False
+    })
+    
+    # Setup session profile
+    await sessions_repo.upsert(phone, {
+        "current_step": "start",
+        "collected_json": {
+            "name": "रामसिंह",
+            "district": "Ujjain",
+            "state": "Madhya Pradesh"
+        }
+    })
+    
+    # 4. Verify tool find_products crop normalization directly
+    from app.ai.agent import tool_find_products
+    # Direct check with "Makka"
+    res_makka = await tool_find_products("Makka", "stem_borer", phone)
+    variety_names_makka = [p["variety_name"] for p in res_makka]
+    assert "VIGOUR 60A90" in variety_names_makka
+    assert "VIGOUR 50x50" not in variety_names_makka # Not approved should be filtered
+    
+    # Direct check with "मक्का"
+    res_hindi = await tool_find_products("मक्का", "stem_borer", phone)
+    variety_names_hindi = [p["variety_name"] for p in res_hindi]
+    assert "VIGOUR 60A90" in variety_names_hindi
+
+    # 5. Mock responses for full turn simulation
+    mock_responses = [
+        json.dumps({
+            "action": "find_products",
+            "args": {"crop": "Makka", "problem": "stem_borer"}
+        }, ensure_ascii=False),
+        json.dumps({
+            "action": "reply",
+            "message": "मक्का (Maize) के लिए सबसे बढ़िया बीज VIGOUR 60A90 है। यह तना छेदक (stem borer) के प्रति अत्यधिक सहनशील है और बेहतर दाने भरने में मदद करता है। दाम के लिए नज़दीकी डीलर से पूछें।",
+            "updated_profile": {
+                "crop": "Maize",
+                "crop_stage": "sowing",
+                "last_recommended_ids": ["MZE001"]
+            }
+        }, ensure_ascii=False)
+    ]
+    
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.test_maize",
+            from_phone=phone,
+            type="text",
+            text="मक्का / Makka बोना है, दाने छोटे होने और कीड़े की समस्या से बचाव के लिए बीज बताओ",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        assert len(mock_whatsapp_client.sent_messages) > 0
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "VIGOUR 60A90" in last_msg
+        assert "दाम के लिए नज़दीकी डीलर से पूछें" in last_msg
+        assert "तना छेदक" in last_msg or "stem borer" in last_msg
