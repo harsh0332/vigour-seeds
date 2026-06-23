@@ -43,6 +43,8 @@ class SessionsRepository:
             data["whatsapp_phone"] = phone
             if "collected_json" not in data or data["collected_json"] is None:
                 data["collected_json"] = {}
+            if "current_step" not in data or data["current_step"] is None:
+                data["current_step"] = "start"
             data["updated_at"] = now_str
             data["last_message_at"] = now_str
 
@@ -61,5 +63,8 @@ class SessionsRepository:
 
     async def clear(self, phone: str) -> bool:
         return await asyncio.to_thread(self._clear, phone)
+
+    async def delete(self, phone: str) -> bool:
+        return await self.clear(phone)
 
 sessions_repo = SessionsRepository()

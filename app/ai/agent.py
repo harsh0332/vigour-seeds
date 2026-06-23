@@ -20,7 +20,7 @@ from app.ai.transcribe import voice_transcription_service
 from app.services.dealer_locator import dealer_locator
 from app.services.ticketing import ticketing
 from app.core.logging import logger
-from app.flows.farmer import parse_location, get_active_states, save_farmer_lead
+from app.flows.farmer import parse_location, get_active_states, save_farmer_lead, parse_land
 from app.data.location_helper import resolve_bare_city
 
 NormalizedMessage = ParsedMessage
@@ -102,6 +102,107 @@ Available tools:
 - analyze_crop_image(media_id): diagnoses the crop issue from the uploaded photo.
 - create_support_ticket(category, description): creates a ticket for active dealers. Categories: "order_status", "stock_query", "payment_issue", "dispatch_delay", "marketing_support", "product_complaint", "other".
 """
+
+EXTRACTION_SYSTEM_PROMPT = """You are an information extraction assistant for a rural Indian farmer chat.
+Analyze the user's latest message and the conversation history, and extract any farmer profile fields.
+
+Fields to extract:
+- name: The farmer's name.
+- village_city: The village, city, or town name they mention.
+- state: The state name.
+- land_size: The agricultural land size mentioned (e.g. "2 bigha", "5 acre", "10"). Only extract if they are stating how much land they own/cultivate.
+- water_source: The water or irrigation source mentioned (e.g., tube-well/ट्यूबवेल, well/कुआँ, pond/तालाब, canal/नहर, river/नदी, rainfed/बारिश का पानी).
+- crop: The crop name mentioned (e.g., "makka", "dhan", "soyabean").
+- problem: The crop problem description (e.g. "पत्ते पीले", "कीड़े", "रोग", "बढ़वार नहीं").
+
+Current Profile Status (Do not overwrite these unless the user explicitly changes or corrects them):
+{profile_status}
+
+Latest User Message:
+{user_message}
+
+Conversation History:
+{history}
+
+IMPORTANT:
+- Return ONLY a valid JSON object. Do not include markdown fences, comments, or extra text.
+- If a field is not present in the message and not already in the profile, set it to null.
+- Do not invent any values. Only extract what is clearly in the user's message.
+- If the user explicitly corrects a previously set value, update it. Otherwise, preserve the current profile value.
+
+JSON Format:
+{{
+  "name": string or null,
+  "village_city": string or null,
+  "state": string or null,
+  "land_size": string or null,
+  "water_source": string or null,
+  "crop": string or null,
+  "problem": string or null
+}}"""
+
+PHRASING_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour Seeds कंपनी के एक अनुभवी और भरोसेमंद कृषि सहायक। Vigour Seeds एक
+विश्वसनीय बीज कंपनी है जो किसानों को अच्छी फसल और बेहतर पैदावार पाने में मदद करती है। आप WhatsApp पर
+ज़्यादातर गाँव के किसानों से बात करते हैं — इसलिए सरल ग्रामीण हिंदी में, अपनेपन से बात करें, जैसे कोई
+अनुभवी कृषि अधिकारी या किसान भाई बात कर रहा हो।
+
+बातचीत के नियम:
+- हमेशा "किसान भाई" वाले अपनेपन से बात करें। "सर" या "कस्टमर" कभी न कहें।
+- छोटे-छोटे वाक्य, एक बार में सिर्फ़ 1–2 सवाल। मैसेज लंबा न हो।
+- किसी मेन्यू/बटन का ज़िक्र न करें — खुली, इंसानी बातचीत करें।
+
+Your Task:
+Phrase a response to the farmer based on this instruction:
+{step_instruction}
+
+Farmer Profile Context:
+{profile_context}
+
+Avoid repeating the previous question: '{last_bot_question}'. If you must ask for the same information, ask it in a completely different way or choose another relevant question.
+
+Generate ONLY the plain text response to send via WhatsApp. Do not output JSON or markdown."""
+
+RECOMMENDATION_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour Seeds कंपनी के एक अनुभवी और भरोसेमंद कृषि सहायक। Vigour Seeds एक
+विश्वसनीय बीज कंपनी है जो किसानों को अच्छी फसल और बेहतर पैदावार पाने में मदद करती है।
+
+Your Task:
+Recommend Vigour Seeds products to the farmer in simple, warm Hindi.
+
+Guidelines:
+1. Briefly summarize the farmer's details first (State: {state}, Crop: {crop}, Problem: {problem}).
+2. Recommend the following products (up to 3):
+{products_data}
+3. For each product:
+   - Product variety name
+   - Short reason why it fits this problem
+   - Benefit
+   - Dosage if available, else say "सही मात्रा और दाम के लिए नज़दीकी डीलर से पूछें"
+   - Price fallback: if mrp_inr is null or 0, say "दाम के लिए नज़दीकी डीलर से पूछें" (do not invent price).
+4. Keep the tone warm, simple Hindi, friendly WhatsApp format.
+
+Generate ONLY the final plain text response to send via WhatsApp. Do not output JSON or markdown."""
+
+FOLLOWUP_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour Seeds कंपनी के एक अनुभवी और भरोसेमंद कृषि सहायक। Vigour Seeds एक
+विश्वसनीय बीज कंपनी है जो किसानों को अच्छी फसल और बेहतर पैदावार पाने में मदद करती है।
+
+Your Task:
+Continue the conversation naturally with the farmer in simple rural Hindi.
+
+Guidelines:
+1. Share the following dealer details if available:
+{dealer_data}
+2. Ask ONE useful follow-up question (e.g., crop stage, recent fertilizer/medicine applied in the last 15-20 days, or offer to look at a crop photo).
+3. Do not ask for name, location, land, water, crop, or problem again as they are already known.
+4. Keep it short, warm, and WhatsApp-friendly.
+
+Generate ONLY the final plain text response to send via WhatsApp. Do not output JSON or markdown."""
+
+REPHRASE_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं।
+Rephrase the following message completely differently in simple Hindi so it does not sound repetitive:
+{message_to_rephrase}
+
+Avoid using the exact same phrasing. Keep it warm and natural.
+Generate ONLY the rephrased response."""
 
 async def get_conversation_history(phone: str, limit: int = 15) -> List[Dict[str, Any]]:
     if not supabase_client:
@@ -203,7 +304,6 @@ async def tool_find_products(crop: str, problem: str, phone: Optional[str] = Non
     if canonical is not None:
         canonical_crop = canonical
     else:
-        # Fall back to case-insensitive partial match
         crops = await crops_repo.list_in_catalog()
         crop_arg_lower = crop.lower().strip()
         matched_crop_row = None
@@ -218,7 +318,6 @@ async def tool_find_products(crop: str, problem: str, phone: Optional[str] = Non
         if matched_crop_row:
             canonical_crop = CANONICAL_PRODUCT_CROP_MAP.get(matched_crop_row.crop_name_en, matched_crop_row.crop_name_en)
         else:
-            # If still nothing, return empty
             return []
 
     rule = await rules_repo.match(canonical_crop, stage, problem, irrigation_type, region)
@@ -400,7 +499,6 @@ async def save_lead_if_complete(phone: str, profile: dict) -> None:
 
 def clean_json_text(text: str) -> str:
     cleaned = text.strip()
-    # Find first '{' and last '}' to extract raw JSON object
     first_brace = cleaned.find('{')
     last_brace = cleaned.rfind('}')
     if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
@@ -414,20 +512,17 @@ def clean_json_text(text: str) -> str:
         cleaned = cleaned[:-3]
     return cleaned.strip()
 
-async def respond(phone: str, message: NormalizedMessage) -> str:
-    distributor = await distributors_repo.get_active_by_phone(phone)
-    distributor_prompt = ""
-    if distributor:
-        distributor_prompt = (
-            f"\n\nUser is an active distributor (dealer):\n"
-            f"- Name: {distributor.contact_name}\n"
-            f"- Shop: {distributor.shop_name}\n"
-            f"- State: {distributor.state}\n"
-            f"- District: {distributor.district}\n"
-            "Please greet them warmly by name, and assist them conversationally with order, stock, scheme, or payment queries. "
-            "If they want to register a support request/ticket, use the create_support_ticket tool."
-        )
-
+async def run_distributor_agent_loop(phone: str, message: NormalizedMessage, distributor: Any) -> str:
+    distributor_prompt = (
+        f"\n\nUser is an active distributor (dealer):\n"
+        f"- Name: {distributor.contact_name}\n"
+        f"- Shop: {distributor.shop_name}\n"
+        f"- State: {distributor.state}\n"
+        f"- District: {distributor.district}\n"
+        "Please greet them warmly by name, and assist them conversationally with order, stock, scheme, or payment queries. "
+        "If they want to register a support request/ticket, use the create_support_ticket tool."
+    )
+    
     history = await get_conversation_history(phone, limit=15)
     formatted_history = []
     for h in history:
@@ -471,7 +566,6 @@ async def respond(phone: str, message: NormalizedMessage) -> str:
         return "नमस्ते 🙏 मैं आपकी किस प्रकार सहायता कर सकता हूँ?"
 
     system_instruction = AGENT_SYSTEM_PROMPT + distributor_prompt + profile_status + "\n\nConversation History:\n" + history_text + "\n" + FORMAT_INSTRUCTIONS
-    
     turn_messages = [f"User: {user_input}"]
     
     loop_count = 0
@@ -507,7 +601,6 @@ async def respond(phone: str, message: NormalizedMessage) -> str:
             if not isinstance(data, dict):
                 raise ValueError("Response must be a JSON object")
         except Exception as e:
-            # If not JSON-like at all (e.g. no '{') and contains text, treat as plain Hindi reply
             if "{" not in cleaned_response and not last_error_reprompted:
                 logger.warning("Agent returned plain text instead of JSON, treating as reply", extra={"phone": phone, "response": raw_response})
                 return raw_response.strip()
@@ -519,7 +612,6 @@ async def respond(phone: str, message: NormalizedMessage) -> str:
                 continue
             else:
                 logger.error("Agent failed JSON twice, falling back to plain Hindi reply", extra={"phone": phone, "response": raw_response})
-                # Attempt to extract text from the raw response (strip JSON tokens)
                 cleaned_text = re.sub(r'[{}\[\]"\'\n\r]', ' ', raw_response).strip()
                 if cleaned_text and any(0x0900 <= ord(c) <= 0x097F for c in cleaned_text):
                     return cleaned_text
@@ -567,16 +659,6 @@ async def respond(phone: str, message: NormalizedMessage) -> str:
             crop_arg = args.get("crop") or ""
             prob_arg = args.get("problem") or ""
             res = await tool_find_products(crop_arg, prob_arg, phone)
-            logger.info(
-                "find_products execution result",
-                extra={
-                    "phone": phone,
-                    "crop_arg": crop_arg,
-                    "prob_arg": prob_arg,
-                    "result_count": len(res),
-                    "raw_result": res
-                }
-            )
             turn_messages.append(f"Agent Action: {cleaned_response}")
             turn_messages.append(f"Tool Result: {json.dumps(res, ensure_ascii=False)}")
             loop_count += 1
@@ -628,3 +710,284 @@ async def respond(phone: str, message: NormalizedMessage) -> str:
 
     logger.error("Agent exceeded max tool loop count", extra={"phone": phone})
     return "आपकी समस्या के समाधान के लिए हमारे कृषि विशेषज्ञ जल्द ही आपसे संपर्क करेंगे। 🙏"
+
+async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> str:
+    history = await get_conversation_history(phone, limit=15)
+    formatted_history = []
+    for h in history:
+        dir_str = "User" if h["direction"] == "inbound" else "Assistant"
+        text = h.get("message_text") or ""
+        if h.get("button_payload"):
+            text += f" (Button: {h['button_payload']})"
+        formatted_history.append(f"{dir_str}: {text}")
+    history_text = "\n".join(formatted_history)
+
+    session = await sessions_repo.get(phone)
+    if not session:
+        session = await session_service.get_or_create(phone)
+    collected = dict(session.collected_json or {})
+    
+    user_input = ""
+    if message.type == "image":
+        img_res = await tool_analyze_crop_image(message.media_id, phone)
+        collected["photo_url"] = img_res.get("photo_url")
+        collected["photo_ai_diagnosis"] = img_res.get("problem_category")
+        collected["photo_ai_confidence"] = img_res.get("confidence")
+        collected["problem_severity_ai"] = img_res.get("severity")
+        
+        escalate = img_res.get("needs_human", False) or img_res.get("confidence", 1.0) < 0.6
+        collected["escalated_to_human"] = escalate
+        if escalate:
+            collected["lead_status"] = "escalated"
+            collected["next_action"] = "escalate_agronomist"
+            await save_farmer_lead(phone, collected)
+        
+        if img_res.get("confidence", 0.0) >= 0.6:
+            collected["problem_summary"] = img_res.get("visible_symptoms_hindi") or img_res.get("problem_category")
+        
+        user_input = f"[User uploaded an image. analyze_crop_image result: {json.dumps(img_res, ensure_ascii=False)}]"
+    elif message.type == "audio":
+        transcription = await voice_transcription_service.transcribe_audio(message.media_id, message.type)
+        user_input = f"{transcription}"
+    else:
+        user_input = message.text or ""
+        if message.button_payload:
+            user_input += f" (Button payload: {message.button_payload})"
+
+    if not user_input:
+        return "नमस्ते 🙏 मैं आपकी किस प्रकार सहायता कर सकता हूँ?"
+
+    # LLM extraction call
+    profile_status_str = json.dumps(collected, ensure_ascii=False)
+    extraction_prompt = EXTRACTION_SYSTEM_PROMPT.format(
+        profile_status=profile_status_str,
+        user_message=user_input,
+        history=history_text
+    )
+    
+    extracted = {}
+    try:
+        raw_extraction = await ai_provider.complete(
+            system=extraction_prompt,
+            user=f"Extract from: {user_input}",
+            json_mode=True
+        )
+        cleaned_ext = clean_json_text(raw_extraction)
+        extracted = json.loads(cleaned_ext)
+    except Exception as e:
+        logger.error("Failed to extract fields using LLM", extra={"error": str(e)})
+
+    # Resolve extracted values
+    if extracted.get("name") and not collected.get("name"):
+        collected["name"] = extracted["name"].strip()
+        
+    loc_parts = []
+    if extracted.get("village_city"):
+        loc_parts.append(extracted["village_city"])
+    if extracted.get("state"):
+        loc_parts.append(extracted["state"])
+    if loc_parts:
+        loc_text = ", ".join(loc_parts)
+        norm_res = await tool_normalize_location(loc_text)
+        if norm_res.get("confident"):
+            if norm_res.get("state"):
+                collected["state"] = norm_res["state"]
+            if norm_res.get("district"):
+                collected["district"] = norm_res["district"]
+            if extracted.get("village_city"):
+                collected["district_raw"] = extracted["village_city"]
+        else:
+            if extracted.get("village_city"):
+                collected["district_raw"] = extracted["village_city"]
+                from app.flows.farmer import parse_location
+                parsed = await parse_location(extracted["village_city"], [])
+                if parsed:
+                    collected["district"] = parsed[1]
+                else:
+                    collected["district"] = extracted["village_city"].title()
+            if extracted.get("state"):
+                collected["state"] = extracted["state"]
+
+    if extracted.get("land_size") and collected.get("total_land") is None:
+        val = parse_land(extracted["land_size"])
+        if val is not None:
+            collected["total_land"] = val
+            
+    if extracted.get("water_source") and not collected.get("water_source"):
+        collected["water_source"] = extracted["water_source"]
+        
+    if extracted.get("crop") and not collected.get("crop"):
+        from app.data.crop_synonyms import resolve_crop
+        canonical = resolve_crop(extracted["crop"])
+        if canonical:
+            collected["crop"] = canonical
+        else:
+            matched_crop_row = await find_crop_by_name(extracted["crop"])
+            if matched_crop_row:
+                collected["crop"] = CANONICAL_PRODUCT_CROP_MAP.get(
+                    matched_crop_row.crop_name_en, matched_crop_row.crop_name_en
+                )
+            else:
+                collected["crop"] = extracted["crop"]
+                
+    if extracted.get("problem") and not collected.get("problem_summary"):
+        collected["problem_summary"] = extracted["problem"]
+
+    # State machine routing
+    current_step = None
+    step_instruction = ""
+    
+    if not collected.get("greeted"):
+        current_step = "STEP_0"
+        step_instruction = "Send a short warm welcome and briefly introduce Vigour Seeds as a trusted seed company that helps farmers get healthy crops and good yield (1-2 lines, simple Hindi, no marketing fluff), then ask for their name."
+        collected["greeted"] = True
+    elif not collected.get("name"):
+        current_step = "STEP_1"
+        step_instruction = "Politely ask for the farmer's name in simple Hindi (using trusted village advisor tone)."
+    elif not collected.get("state") or not collected.get("district"):
+        if collected.get("district") and not collected.get("state"):
+            if not collected.get("asked_state_once"):
+                current_step = "STEP_2_STATE_ONLY"
+                step_instruction = f"The farmer provided the village/city as '{collected.get('district_raw') or collected.get('district')}', but the state (राज्य) is missing. Ask them politely to specify which state (राज्य) they are from."
+                collected["asked_state_once"] = True
+            else:
+                collected["state"] = "Madhya Pradesh"
+                
+        if not collected.get("state") or not collected.get("district"):
+            current_step = "STEP_2"
+            step_instruction = "Ask the farmer which village/city AND state (राज्य) they are from. Ask for the state explicitly. Example: 'आप किस गाँव/शहर से हैं, और कौन से राज्य से? (जैसे: नरसिंहपुर, मध्य प्रदेश)'"
+            
+    if current_step is None and collected.get("total_land") is None:
+        current_step = "STEP_3"
+        step_instruction = "Ask how much agricultural land they have (एकड़/बीघा)."
+        
+    if current_step is None and not collected.get("water_source"):
+        current_step = "STEP_4"
+        step_instruction = "Ask what their water/irrigation source is. Give natural examples in the question (like tube-well, well, pond, canal, river, or rainfed water) instead of buttons. Example: 'आपके खेत में पानी कहाँ से आता है? ट्यूबवेल, कुआँ, तालाब, नहर, नदी, या बारिश का पानी?'"
+        
+    if current_step is None and not collected.get("crop"):
+        current_step = "STEP_5"
+        step_instruction = "Ask which crop they are currently growing."
+        
+    if current_step is None and not collected.get("problem_summary"):
+        current_step = "STEP_6"
+        step_instruction = "Ask what problem the crop is facing in their own words. Mention they can also send a photo of the crop."
+        
+    if current_step is None:
+        if not collected.get("recommended"):
+            current_step = "STEP_7"
+        else:
+            current_step = "STEP_8"
+
+    reply_message = ""
+    last_bot_q = collected.get("last_bot_question") or ""
+    
+    if current_step == "STEP_7":
+        products = await tool_find_products(collected["crop"], collected["problem_summary"], phone)
+        products_data_str = json.dumps(products, ensure_ascii=False)
+        recommend_prompt = RECOMMENDATION_SYSTEM_PROMPT.format(
+            state=collected.get("state"),
+            crop=collected.get("crop"),
+            problem=collected.get("problem_summary"),
+            products_data=products_data_str
+        )
+        reply_message = await ai_provider.complete(
+            system=recommend_prompt,
+            user=f"Recommend for: {collected.get('crop')}, {collected.get('problem_summary')}"
+        )
+        collected["recommended"] = True
+        collected["last_recommended_ids"] = [p["variety_name"] for p in products]
+        
+        try:
+            await save_lead_if_complete(phone, collected)
+        except Exception as save_err:
+            logger.error("Failed saving lead during recommendation", extra={"phone": phone, "error": str(save_err)})
+            
+    elif current_step == "STEP_8":
+        dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
+        dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
+        followup_prompt = FOLLOWUP_SYSTEM_PROMPT.format(
+            dealer_data=dealer_data_str
+        )
+        reply_message = await ai_provider.complete(
+            system=followup_prompt,
+            user="Continue the conversation naturally and share dealer info if available"
+        )
+        
+    else:
+        phrasing_prompt = PHRASING_SYSTEM_PROMPT.format(
+            step_instruction=step_instruction,
+            profile_context=json.dumps(collected, ensure_ascii=False),
+            last_bot_question=last_bot_q
+        )
+        reply_message = await ai_provider.complete(
+            system=phrasing_prompt,
+            user=f"Phrase the question for the farmer."
+        )
+
+    # No-Repeat Guard
+    history_sent = collected.get("sent_messages_history", [])
+    
+    def is_duplicate(msg: str) -> bool:
+        clean_msg = re.sub(r"[,\-\s\(\)\.\?।!]+", "", msg.lower())
+        for old in history_sent + ([last_bot_q] if last_bot_q else []):
+            clean_old = re.sub(r"[,\-\s\(\)\.\?।!]+", "", old.lower())
+            if clean_msg == clean_old:
+                return True
+        return False
+        
+    if is_duplicate(reply_message):
+        try:
+            rephrase_prompt = REPHRASE_SYSTEM_PROMPT.format(message_to_rephrase=reply_message)
+            rephrased = await ai_provider.complete(
+                system=rephrase_prompt,
+                user="Rephrase the message so it has a different wording."
+            )
+            if not is_duplicate(rephrased):
+                reply_message = rephrased
+        except Exception as rephrase_err:
+            logger.error("Failed to rephrase duplicate message", extra={"error": str(rephrase_err)})
+
+    history_sent.append(reply_message)
+    if len(history_sent) > 4:
+        history_sent = history_sent[-4:]
+    collected["sent_messages_history"] = history_sent
+    collected["last_bot_question"] = reply_message
+
+    await sessions_repo.upsert(phone, {"collected_json": collected})
+    return reply_message
+
+async def respond(phone: str, message: NormalizedMessage) -> str:
+    distributor = await distributors_repo.get_active_by_phone(phone)
+    if distributor:
+        return await run_distributor_agent_loop(phone, message, distributor)
+    else:
+        return await run_farmer_state_machine(phone, message)
+
+# Startup logging to verify configuration is active
+try:
+    first_line_prompt = AGENT_SYSTEM_PROMPT.strip().split("\n")[0]
+    provider_name = getattr(ai_provider, "provider", "unknown")
+    model_name = "unknown"
+    if provider_name == "openai":
+        from app.core.config import settings
+        model_name = settings.OPENAI_MODEL or "gpt-4o-mini"
+    elif provider_name == "gemini":
+        model_name = "gemini-2.5-flash"
+    elif provider_name == "claude":
+        model_name = "claude-3-5-sonnet-latest"
+        
+    logger.info(
+        "Conversational Agent initialized successfully",
+        extra={
+            "prompt_first_line": first_line_prompt,
+            "provider": provider_name,
+            "model": model_name
+        }
+    )
+    print(f"[{datetime.now().isoformat()}] CONVERSATIONAL AGENT STARTUP:")
+    print(f"  Prompt first line: {first_line_prompt}")
+    print(f"  Provider: {provider_name}")
+    print(f"  Model: {model_name}")
+except Exception as startup_err:
+    logger.error("Failed to log agent startup info", extra={"error": str(startup_err)})
