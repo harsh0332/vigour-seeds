@@ -324,10 +324,68 @@ Your Task:
 
 केवल किसान को भेजे जाने वाला शुद्ध संदेश लिखें। कोई JSON या अतिरिक्त टेक्स्ट न लिखें।"""
 
+def is_greeting_message(text: str) -> bool:
+    import re
+    # Clean message text: keep only alphanumeric and devanagari letters and spaces
+    clean = re.sub(r"[^\w\s\u0900-\u097F]", " ", text.lower())
+    clean = " ".join(clean.split()) # normalize spaces
+    
+    greeting_patterns = [
+        r"^hi$", r"^hye$", r"^hello$", r"^namaste$", r"^namaskar$", r"^ram\s*ram$",
+        r"^jay\s*kisan$", r"^jai\s*kisan$", r"^नमस्ते$", r"^नमस्कार$", r"^राम\s*राम$",
+        r"^जय\s*किसान$", r"^हेलो$", r"^helo$", r"^hey$"
+    ]
+    
+    if any(re.match(p, clean) for p in greeting_patterns):
+        return True
+        
+    greeting_words = {
+        "hi", "hye", "hello", "namaste", "namaskar", "नमस्ते", "नमस्कार", "हेलो",
+        "राम", "जय", "जय किसान", "जयकिसान", "jai", "jay", "kisan", "helo", "hey"
+    }
+    
+    words = clean.split()
+    if len(words) <= 4:
+        if any(w in greeting_words for w in words):
+            return True
+            
+    return False
+
+def get_farmer_addressing(name: str):
+    name = name.strip() if name else ""
+    if not name or name == "किसान भाई" or name == "किसान":
+        return {
+            "kisan": "किसान भाई",
+            "bhai": "किसान भाई",
+            "priya": "किसान भाई",
+            "ji": "किसान भाई"
+        }
+    
+    clean_name = name
+    if clean_name.endswith("भाई") or clean_name.endswith("जी"):
+        return {
+            "kisan": f"किसान भाई {clean_name}",
+            "bhai": clean_name,
+            "priya": f"प्रिय {clean_name}",
+            "ji": clean_name
+        }
+    return {
+        "kisan": f"किसान भाई {clean_name}",
+        "bhai": f"{clean_name} भाई",
+        "priya": f"प्रिय {clean_name}",
+        "ji": f"{clean_name} जी"
+    }
+
 def detect_and_handle_short_or_help(text: str, farmer_name: str, last_reply: str) -> str:
     import random
     import re
     clean = text.strip().lower()
+    
+    addr = get_farmer_addressing(farmer_name)
+    addr_kisan = addr["kisan"]
+    addr_bhai = addr["bhai"]
+    addr_priya = addr["priya"]
+    addr_ji = addr["ji"]
     
     # 1. Open help / "what can you do" queries
     help_queries = [
@@ -337,9 +395,9 @@ def detect_and_handle_short_or_help(text: str, farmer_name: str, last_reply: str
     ]
     if any(q in clean for q in help_queries):
         options = [
-            f"मैं फसल की समस्या, कीड़े-बीमारी, खाद-पानी, बीज चुनाव, और सही Vigour प्रोडक्ट चुनने में मदद करता हूँ। {farmer_name} भाई, आपकी फसल में अभी क्या दिक्कत है?",
-            f"किसान भाई {farmer_name}, मैं आपकी फसल की बीमारी पहचानने, खाद-दवा की जानकारी देने और सही Vigour बीज चुनने में मदद कर सकता हूँ। अभी आपके खेत में कौन सी फसल है?",
-            f"जी, मैं बीजों के चयन, सिंचाई, खाद-पानी के उपयोग और फसलों में लगने वाले रोगों के निदान में आपकी सहायता कर सकता हूँ। {farmer_name} भाई, अभी क्या समस्या आ रही है?"
+            f"मैं फसल की समस्या, कीड़े-बीमारी, खाद-पानी, बीज चुनाव, और सही Vigour प्रोडक्ट चुनने में मदद करता हूँ। {addr_bhai}, आपकी फसल में अभी क्या दिक्कत है?",
+            f"{addr_kisan}, मैं आपकी फसल की बीमारी पहचानने, खाद-दवा की जानकारी देने और सही Vigour बीज चुनने में मदद कर सकता हूँ। अभी आपके खेत में कौन सी फसल है?",
+            f"जी, मैं बीजों के चयन, सिंचाई, खाद-पानी के उपयोग और फसलों में लगने वाले रोगों के निदान में आपकी सहायता कर सकता हूँ। {addr_bhai}, अभी क्या समस्या आ रही है?"
         ]
         return random.choice([o for o in options if o != last_reply])
 
@@ -347,9 +405,9 @@ def detect_and_handle_short_or_help(text: str, farmer_name: str, last_reply: str
     thanks_words = ["धन्यवाद", "thank you", "shukriya", "thanks", "dhanyawad", "dhanyavad", "शुक्रिया", "tnx", "ty"]
     if any(w == clean or (w in clean and len(clean) < 15) for w in thanks_words):
         options = [
-            f"खुशी हुई मदद करके, {farmer_name} भाई! फसल, खाद, बीज या बीमारी से जुड़ा कोई सवाल हो तो बेझिझक बताइए।",
-            f"मदद करके बहुत अच्छा लगा, {farmer_name} भाई! आगे भी खेती में कोई समस्या हो तो आपका यह Vigour मित्र हमेशा हाज़िर है।",
-            f"कोई बात नहीं, {farmer_name} भाई! अच्छी फसल और बेहतर उपज के लिए हमेशा संपर्क में रहें।"
+            f"खुशी हुई मदद करके, {addr_bhai}! फसल, खाद, बीज या बीमारी से जुड़ा कोई सवाल हो तो बेझिझक बताइए।",
+            f"मदद करके बहुत अच्छा लगा, {addr_bhai}! आगे भी खेती में कोई समस्या हो तो आपका यह Vigour मित्र हमेशा हाज़िर है।",
+            f"कोई बात नहीं, {addr_bhai}! अच्छी फसल और बेहतर उपज के लिए हमेशा संपर्क में रहें।"
         ]
         return random.choice([o for o in options if o != last_reply])
 
@@ -357,9 +415,9 @@ def detect_and_handle_short_or_help(text: str, farmer_name: str, last_reply: str
     ok_words = ["ok", "okay", "ठीक है", "thik hai", "thik", "ठीक", "ओके", "okk", "okey"]
     if clean in ok_words:
         options = [
-            f"बढ़िया! {farmer_name} भाई, आपकी खेती से जुड़ी और कोई समस्या हो तो बताइए।",
-            f"जी ठीक है, {farmer_name} भाई। फसल, बीज या खाद के बारे में और कुछ जानना चाहते हैं?",
-            f"ठीक है {farmer_name} भाई, अगर कोई और सवाल हो तो बेझिझक लिखिएगा।"
+            f"बढ़िया! {addr_bhai}, आपकी खेती से जुड़ी और कोई समस्या हो तो बताइए।",
+            f"जी ठीक है, {addr_bhai}। फसल, बीज या खाद के बारे में और कुछ जानना चाहते हैं?",
+            f"ठीक है {addr_bhai}, अगर कोई और सवाल हो तो बेझिझक लिखिएगा।"
         ]
         return random.choice([o for o in options if o != last_reply])
 
@@ -367,18 +425,18 @@ def detect_and_handle_short_or_help(text: str, farmer_name: str, last_reply: str
     yes_words = ["हाँ", "हाँ जी", "जी हाँ", "जी", "अच्छा", "achha", "haan", "han", "yes", "ji", "जी!"]
     if clean in yes_words:
         options = [
-            f"जी! {farmer_name} भाई, चाहें तो फसल का नाम या समस्या बताइए, मैं सही सलाह दूँगा।",
-            f"अच्छा {farmer_name} भाई, खेती-बाड़ी से संबंधित किसी भी सहायता के लिए मैं यहाँ हूँ। कोई सवाल है?",
-            f"जी बिल्कुल {farmer_name} भाई! फसल की बीमारी या खाद-पानी से जुड़ा कोई भी प्रश्न आप पूछ सकते हैं।"
+            f"जी! {addr_bhai}, चाहें तो फसल का नाम या समस्या बताइए, मैं सही सलाह दूँगा।",
+            f"अच्छा {addr_bhai}, खेती-बाड़ी से संबंधित किसी भी सहायता के लिए मैं यहाँ हूँ। कोई सवाल है?",
+            f"जी बिल्कुल {addr_bhai}! फसल की बीमारी या खाद-पानी से जुड़ा कोई भी प्रश्न आप पूछ सकते हैं।"
         ]
         return random.choice([o for o in options if o != last_reply])
 
     # 5. Emoji-only queries
     if len(clean) > 0 and not re.search(r'[a-zA-Z0-9\u0900-\u097F]', clean):
         options = [
-            f"🙏 और कोई मदद चाहिए तो बताइए, {farmer_name} भाई।",
-            f"👍 जी {farmer_name} भाई, खेती-बाड़ी से जुड़ा कोई भी सवाल हो तो ज़रूर पूछिएगा।",
-            f"😊 धन्यवाद {farmer_name} भाई! कोई और सहायता चाहिए हो तो बताइए।"
+            f"🙏 और कोई मदद चाहिए तो बताइए, {addr_bhai}।",
+            f"👍 जी {addr_bhai}, खेती-बाड़ी से जुड़ा कोई भी सवाल हो तो ज़रूर पूछिएगा।",
+            f"😊 धन्यवाद {addr_bhai}! कोई और सहायता चाहिए हो तो बताइए।"
         ]
         return random.choice([o for o in options if o != last_reply])
 
@@ -388,7 +446,11 @@ def handle_unclear_or_out_of_scope(extracted: dict, collected: dict, last_reply:
     import random
     import re
     
-    farmer_name = collected.get("name") or "किसान भाई"
+    addr = get_farmer_addressing(collected.get("name"))
+    addr_kisan = addr["kisan"]
+    addr_bhai = addr["bhai"]
+    addr_priya = addr["priya"]
+    addr_ji = addr["ji"]
     
     history_sent = collected.get("sent_messages_history", [])
     last_3_sent = [s.strip() for s in history_sent[-3:]] if history_sent else []
@@ -421,9 +483,9 @@ def handle_unclear_or_out_of_scope(extracted: dict, collected: dict, last_reply:
         collected["clarify_attempts"] = 0
         
         options = [
-            f"किसान भाई {farmer_name}, सरकारी योजनाओं या मंडी भाव के बारे में मेरे पास पक्की जानकारी नहीं है। लेकिन मैं आपकी फसल, कीड़े-बीमारी, खाद-पानी या बीज से जुड़ी समस्या में मदद कर सकता हूँ। अभी आपकी फसल में क्या दिक्कत है?",
-            f"माफ़ कीजिएगा {farmer_name} भाई, बैंक लोन, बीमा या मंडी कीमतों के बारे में मेरे पास विश्वसनीय जानकारी नहीं है। लेकिन मैं फसल की बीमारी पहचानने, खाद-दवा की जानकारी देने और सही Vigour बीज चुनने में आपकी मदद कर सकता हूँ। आपकी कौन सी फसल है?",
-            f"प्रिय {farmer_name}, इस विषय पर मेरे पास सटीक डेटा नहीं है। मैं मुख्य रूप से कीट-बीमारी के निदान, खाद-पानी के उपयोग और बेहतर पैदावार के लिए सही बीजों की सिफारिश में मदद करता हूँ। क्या आपकी फसल में कोई समस्या आ रही है?"
+            f"{addr_kisan}, सरकारी योजनाओं या मंडी भाव के बारे में मेरे पास पक्की जानकारी नहीं है। लेकिन मैं आपकी फसल, कीड़े-बीमारी, खाद-पानी या बीज से जुड़ी समस्या में मदद कर सकता हूँ। अभी आपकी फसल में क्या दिक्कत है?",
+            f"माफ़ कीजिएगा {addr_bhai}, बैंक लोन, बीमा या मंडी कीमतों के बारे में मेरे पास विश्वसनीय जानकारी नहीं है। लेकिन मैं फसल की बीमारी पहचानने, खाद-दवा की जानकारी देने और सही Vigour बीज चुनने में आपकी मदद कर सकता हूँ। आपकी कौन सी फसल है?",
+            f"{addr_priya}, इस विषय पर मेरे पास सटीक डेटा नहीं है। मैं मुख्य रूप से कीट-बीमारी के निदान, खाद-पानी के उपयोग और बेहतर पैदावार के लिए सही बीजों की सिफारिश में मदद करता हूँ। क्या आपकी फसल में कोई समस्या आ रही है?"
         ]
         return choose_varied_option(options)
 
@@ -433,9 +495,9 @@ def handle_unclear_or_out_of_scope(extracted: dict, collected: dict, last_reply:
         collected["clarify_attempts"] = 0
         
         options = [
-            f"किसान भाई {farmer_name}, विशिष्ट रासायनिक दवाओं की सटीक छिड़काव मात्रा के बारे में मैं पक्की सलाह नहीं दे सकता। सही दवा और मात्रा के लिए कृपया अपने नज़दीकी कृषि डीलर या कृषि अधिकारी से ज़रूर पुष्टि करें। क्या हम कीट प्रतिरोधी किस्मों या बीजों की बात करें?",
-            f"माफ़ कीजिएगा {farmer_name} भाई, दवाइयों की सटीक मात्रा और नाम के लिए अपने स्थानीय कृषि केंद्र या डीलर से संपर्क करें। मैं आपकी फसल के लिए कीट और रोग प्रतिरोधी बीजों की जानकारी दे सकता हूँ। अभी आपके खेत में कौन सी फसल है?",
-            f"छिड़काव की सही मात्रा और रासायनिक दवाओं की पुष्टि के लिए नज़दीकी डीलर से पूछें। {farmer_name} भाई, हम फसल रोग निवारण और सही उत्पाद चयन में आपकी मदद कर सकते हैं। क्या आप फसल के बारे में कुछ और जानना चाहते हैं?"
+            f"{addr_kisan}, विशिष्ट रासायनिक दवाओं की सटीक छिड़काव मात्रा के बारे में मैं पक्की सलाह नहीं दे सकता। सही दवा और मात्रा के लिए कृपया अपने नज़दीकी कृषि डीलर या कृषि अधिकारी से ज़रूर पुष्टि करें। क्या हम कीट प्रतिरोधी किस्मों या बीजों की बात करें?",
+            f"माफ़ कीजिएगा {addr_bhai}, दवाइयों की सटीक मात्रा और नाम के लिए अपने स्थानीय कृषि केंद्र या डीलर से संपर्क करें। मैं आपकी फसल के लिए कीट और रोग प्रतिरोधी बीजों की जानकारी दे सकता हूँ। अभी आपके खेत में कौन सी फसल है?",
+            f"छिड़काव की सही मात्रा और रासायनिक दवाओं की पुष्टि के लिए नज़दीकी डीलर से पूछें। {addr_bhai}, हम फसल रोग निवारण और सही उत्पाद चयन में आपकी मदद कर सकते हैं। क्या आप फसल के बारे में कुछ और जानना चाहते हैं?"
         ]
         return choose_varied_option(options)
 
@@ -446,9 +508,9 @@ def handle_unclear_or_out_of_scope(extracted: dict, collected: dict, last_reply:
         
         if attempts <= 2:
             options = [
-                f"मुझे यह पूरी तरह समझ नहीं आया, {farmer_name} भाई। क्या आप थोड़ा और बताएँगे?",
-                f"माफ़ कीजिए {farmer_name} भाई, ज़रा खुलकर बताइए — किस फसल या किस समस्या की बात है?",
-                f"प्रिय {farmer_name}, मैं आपकी बात पूरी तरह समझ नहीं पाया। क्या आप अपनी फसल और उसकी समस्या के बारे में विस्तार से बताएंगे?"
+                f"मुझे यह पूरी तरह समझ नहीं आया, {addr_bhai}। क्या आप थोड़ा और बताएँगे?",
+                f"माफ़ कीजिए {addr_bhai}, ज़रा खुलकर बताइए — किस फसल या किस समस्या की बात है?",
+                f"{addr_priya}, मैं आपकी बात पूरी तरह समझ नहीं पाया। क्या आप अपनी फसल और उसकी समस्या के बारे में विस्तार से बताएंगे?"
             ]
             return choose_varied_option(options)
         else:
@@ -457,11 +519,11 @@ def handle_unclear_or_out_of_scope(extracted: dict, collected: dict, last_reply:
             problem = collected.get("problem_summary")
             
             if not crop:
-                return f"किसान भाई {farmer_name}, आइए हम आपकी फसल से शुरुआत करते हैं। आप अभी अपने खेत में कौन सी फसल उगा रहे हैं?"
+                return f"{addr_kisan}, आइए हम आपकी फसल से शुरुआत करते हैं। आप अभी अपने खेत में कौन सी फसल उगा रहे हैं?"
             elif not problem:
-                return f"ठीक है, चलिए आपकी {crop} फसल के बारे में बात करते हैं। {farmer_name} भाई, आपकी {crop} में अभी क्या समस्या या बीमारी आ रही है?"
+                return f"ठीक है, चलिए आपकी {crop} फसल के बारे में बात करते हैं। {addr_bhai}, आपकी {crop} में अभी क्या समस्या या बीमारी आ रही है?"
             else:
-                return f"किसान भाई {farmer_name}, आपकी {crop} फसल और {problem} की समस्या के बारे में हम सही Vigour बीज और डीलर की जानकारी दे सकते हैं। क्या आप डीलर का पता जानना चाहते हैं?"
+                return f"{addr_kisan}, आपकी {crop} फसल और {problem} की समस्या के बारे में हम सही Vigour बीज और डीलर की जानकारी दे सकते हैं। क्या आप डीलर का पता जानना चाहते हैं?"
 
     # If it is a clear message, reset clarify attempts
     if "clarify_attempts" in collected and collected["clarify_attempts"] > 0:
@@ -1070,6 +1132,9 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
     except Exception as e:
         logger.error("Failed to extract fields using LLM", extra={"error": str(e)})
 
+    if is_greeting_message(user_input):
+        extracted["is_unclear"] = False
+
     # Resolve extracted values
     if extracted.get("name") and not collected.get("name"):
         collected["name"] = extracted["name"].strip()
@@ -1206,13 +1271,15 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
     reply_message = ""
     last_bot_q = collected.get("last_bot_question") or ""
     
-    unclear_reply = handle_unclear_or_out_of_scope(extracted, collected, last_bot_q)
+    unclear_reply = None
+    if current_step in ["STEP_6", "STEP_7", "STEP_8", "STEP_ADVISOR"]:
+        unclear_reply = handle_unclear_or_out_of_scope(extracted, collected, last_bot_q)
     
     # 0. Check for short/acknowledgement/help queries first
     short_reply = None
     if not unclear_reply:
         if collected.get("recommended"):
-            short_reply = detect_and_handle_short_or_help(user_input, collected.get("name") or "किसान भाई", last_bot_q)
+            short_reply = detect_and_handle_short_or_help(user_input, collected.get("name"), last_bot_q)
         else:
             # Check for open help queries globally
             clean_input = user_input.strip().lower()
@@ -1222,7 +1289,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
                 "और क्या कर सकते", "और क्या मदद"
             ]
             if any(q in clean_input for q in help_queries):
-                short_reply = detect_and_handle_short_or_help(user_input, collected.get("name") or "किसान भाई", last_bot_q)
+                short_reply = detect_and_handle_short_or_help(user_input, collected.get("name"), last_bot_q)
 
     if unclear_reply:
         reply_message = unclear_reply
@@ -1232,7 +1299,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
         if current_step == "STEP_7":
             if not collected.get("problem_clarified"):
                 clarify_prompt = CLARIFY_PROBLEM_SYSTEM_PROMPT.format(
-                    farmer_name=collected.get("name") or "किसान भाई",
+                    farmer_name=collected.get("name") or "किसान",
                     crop=collected.get("crop"),
                     problem=collected.get("problem_summary")
                 )
@@ -1249,7 +1316,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
                 
                 if len(products) == 0:
                     no_prod_prompt = NO_PRODUCT_SYSTEM_PROMPT.format(
-                        farmer_name=collected.get("name") or "किसान भाई",
+                        farmer_name=collected.get("name") or "किसान",
                         crop=collected.get("crop"),
                         problem=collected.get("problem_summary"),
                         dealer_data=dealer_data_str
@@ -1261,7 +1328,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
                 else:
                     products_data_str = json.dumps(products, ensure_ascii=False)
                     recommend_prompt = RECOMMENDATION_SYSTEM_PROMPT.format(
-                        farmer_name=collected.get("name") or "किसान भाई",
+                        farmer_name=collected.get("name") or "किसान",
                         state=collected.get("state"),
                         district=collected.get("district"),
                         crop=collected.get("crop"),
@@ -1307,7 +1374,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
             dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
             dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
             followup_prompt = FOLLOWUP_SYSTEM_PROMPT.format(
-                farmer_name=collected.get("name") or "किसान भाई",
+                farmer_name=collected.get("name") or "किसान",
                 dealer_data=dealer_data_str
             )
             reply_message = await ai_provider.complete(
@@ -1320,7 +1387,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
             dealer_info = await tool_find_dealer(collected.get("state"), collected.get("district"))
             dealer_data_str = json.dumps(dealer_info, ensure_ascii=False)
             advisor_prompt = ADVISOR_SYSTEM_PROMPT.format(
-                farmer_name=collected.get("name") or "किसान भाई",
+                farmer_name=collected.get("name") or "किसान",
                 dealer_data=dealer_data_str,
                 crop=collected.get("crop"),
                 problem=collected.get("problem_summary"),
@@ -1333,7 +1400,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
             
         else:
             phrasing_prompt = PHRASING_SYSTEM_PROMPT.format(
-                farmer_name=collected.get("name") or "किसान भाई",
+                farmer_name=collected.get("name") or "किसान",
                 user_message=user_input,
                 step_instruction=step_instruction,
                 profile_context=json.dumps(collected, ensure_ascii=False),

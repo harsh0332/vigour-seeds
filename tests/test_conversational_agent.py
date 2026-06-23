@@ -1070,12 +1070,17 @@ async def test_conversational_unclear_and_out_of_scope():
     phone = "919000000036"
     await sessions_repo.delete(phone)
     
-    # Initialize session
+    # Initialize session with full profile collected so that it is past onboarding
     await sessions_repo.upsert(phone, {
-        "current_step": "STEP_1",
+        "current_step": "STEP_6",
         "collected_json": {
             "greeted": True,
-            "name": "Harsh"
+            "name": "Harsh",
+            "district": "Ujjain",
+            "state": "Madhya Pradesh",
+            "total_land": 5.0,
+            "water_source": "नहर",
+            "crop": "Soybean"
         }
     })
     
@@ -1561,3 +1566,58 @@ async def test_no_repeated_pitches():
         
         last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
         assert "Vigour 9560" in last_msg
+
+
+@pytest.mark.asyncio
+async def test_conversational_greeting_onboarding_and_whitelist():
+    """
+    Test Scenario: Verifies that greetings like "Hye", "Hello ji namaskar" are NOT treated as unclear
+    and successfully run the onboarding welcome flow (STEP_0).
+    """
+    phone = "919000000084"
+    
+    # Test "Hye"
+    await sessions_repo.delete(phone)
+    mock_responses = make_mock_complete(
+        {},
+        "नमस्ते 🙏 Vigour Seeds में आपका स्वागत है। मैं आपका कृषि विशेषज्ञ Vigour मित्र हूँ। मैं आपकी क्या मदद कर सकता हूँ?"
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.whitelist1",
+            from_phone=phone,
+            type="text",
+            text="Hye",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("greeted") is True
+        
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Vigour मित्र" in last_msg
+        assert "नमस्ते" in last_msg
+
+    # Test "Hello ji namaskar"
+    await sessions_repo.delete(phone)
+    mock_responses2 = make_mock_complete(
+        {},
+        "नमस्ते 🙏 Vigour Seeds में आपका स्वागत है। मैं आपका कृषि विशेषज्ञ Vigour मित्र हूँ। मैं आपकी क्या मदद कर सकता हूँ?"
+    )
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses2)):
+        msg2 = ParsedMessage(
+            wamid="wamid.whitelist2",
+            from_phone=phone,
+            type="text",
+            text="Hello ji namaskar",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg2)
+        
+        session2 = await sessions_repo.get(phone)
+        assert session2.collected_json.get("greeted") is True
+        
+        last_msg2 = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Vigour मित्र" in last_msg2
+        assert "नमस्ते" in last_msg2
