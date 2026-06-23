@@ -564,3 +564,72 @@ async def test_conversational_maize_recommendation_and_translation():
         assert "VIGOUR 60A90" in last_msg
         assert "दाम के लिए नज़दीकी डीलर से पूछें" in last_msg
         assert "तना छेदक" in last_msg or "stem borer" in last_msg
+
+@pytest.mark.asyncio
+async def test_conversational_bare_city_normalization():
+    """
+    Verify that bare city 'Bhopal' alone resolves to state 'Madhya Pradesh' and district 'Bhopal'
+    confidently without prompting for state.
+    """
+    from app.flows.farmer import parse_location
+    active_states = [{"state": "Madhya Pradesh", "state_code": "MP"}]
+    res = await parse_location("Bhopal", active_states)
+    assert res is not None
+    state, dist_norm, dist_raw = res
+    assert state == "Madhya Pradesh"
+    assert dist_norm == "Bhopal"
+    assert dist_raw == "bhopal"
+
+    # Also test Devanagari bare city
+    res_hi = await parse_location("इंदौर", active_states)
+    assert res_hi is not None
+    state_hi, dist_norm_hi, dist_raw_hi = res_hi
+    assert state_hi == "Madhya Pradesh"
+    assert dist_norm_hi == "Indore"
+    assert dist_raw_hi == "इंदौर"
+
+@pytest.mark.asyncio
+async def test_conversational_reset_prevention_on_short_reply():
+    """
+    Verify that when conversation history is present, short replies like 'batao'
+    do not trigger a welcome re-greeting/reset.
+    """
+    phone = "919000000018"
+    await sessions_repo.upsert(phone, {
+        "current_step": "start",
+        "collected_json": {
+            "name": "रामजी",
+            "state": "Madhya Pradesh",
+            "district": "Ujjain",
+            "crop": "Maize"
+        }
+    })
+    
+    # Mock LLM to return a normal follow-up asking for the problem, not a welcome greeting
+    mock_responses = [
+        json.dumps({
+            "action": "reply",
+            "message": "हाँ रामजी भाई, मक्का की फसल में क्या समस्या आ रही है? पत्तियां पीली हो रही हैं या कीड़े लगे हैं?"
+        }, ensure_ascii=False)
+    ]
+    
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)) as mock_complete:
+        msg = ParsedMessage(
+            wamid="wamid.test_short_reply",
+            from_phone=phone,
+            type="text",
+            text="batao",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        
+        # Verify greeting/intro was NOT generated in the response
+        assert len(mock_whatsapp_client.sent_messages) > 0
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Vigour मित्र" not in last_msg
+        assert "स्वागत" not in last_msg
+        
+        # Ensure system prompt had context memory instructions
+        system_arg = mock_complete.call_args[1]["system"]
+        assert "Vigour मित्र" in system_arg
+        assert "batao" in mock_complete.call_args[1]["user"]

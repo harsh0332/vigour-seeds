@@ -3,6 +3,7 @@ import uuid
 import asyncio
 from datetime import datetime
 from typing import Optional, Dict, Any, Tuple
+from app.data.location_helper import resolve_bare_city
 from app.db.client import supabase_client
 from app.db.repositories.sessions import sessions_repo
 from app.db.repositories.leads import leads_repo
@@ -108,6 +109,11 @@ async def parse_location(text: str, active_states: list) -> Optional[Tuple[str, 
                 break
                 
     if not matched_state:
+        # Fallback to bare city check
+        bare_city_res = resolve_bare_city(text)
+        if bare_city_res:
+            return bare_city_res
+            
         # Fallback split check
         parts = cleaned.split(",")
         if len(parts) >= 2:
