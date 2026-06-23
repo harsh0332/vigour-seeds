@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
 
     # Application configuration
     APP_ENV: str = "production"

@@ -23,7 +23,7 @@ class AIProvider:
             elif self.provider == "openai":
                 from openai import OpenAI
                 api_key = settings.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
-                self._openai_client = OpenAI(api_key=api_key)
+                self._openai_client = OpenAI(api_key=api_key, timeout=30.0)
                 logger.info("OpenAI provider client initialized successfully")
             elif self.provider == "claude":
                 from anthropic import Anthropic
@@ -126,7 +126,7 @@ class AIProvider:
         messages.append({"role": "user", "content": user_content})
         
         args = {
-            "model": "gpt-4o-mini",
+            "model": settings.OPENAI_MODEL or "gpt-4o-mini",
             "messages": messages,
             "temperature": 0.1
         }
