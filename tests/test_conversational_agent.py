@@ -466,6 +466,26 @@ async def test_conversational_maize_recommendation_and_translation():
     for p in maize_products:
         in_memory_db.tables["products"].append(p)
 
+    # Seed Paddy & Hot Pepper (Chilli) products
+    in_memory_db.tables["products"].append({
+        "product_id": "PDY001",
+        "variety_name": "VIGOUR 087",
+        "crop": "Paddy",
+        "approved_for_recommendation": "Y",
+        "mrp_inr": 120.0,
+        "pack_size": "20 kg",
+        "duration_days": "120-125"
+    })
+    in_memory_db.tables["products"].append({
+        "product_id": "HPP001",
+        "variety_name": "VIGOUR TEJASWI",
+        "crop": "Hot Pepper (Chilli)",
+        "approved_for_recommendation": "Y",
+        "mrp_inr": 500.0,
+        "pack_size": "100 g",
+        "duration_days": "180"
+    })
+
     # 3. Seed recommendation rules
     in_memory_db.tables["recommendation_rules"].append({
         "rule_id": "R031",
@@ -501,6 +521,16 @@ async def test_conversational_maize_recommendation_and_translation():
     res_hindi = await tool_find_products("मक्का", "stem_borer", phone)
     variety_names_hindi = [p["variety_name"] for p in res_hindi]
     assert "VIGOUR 60A90" in variety_names_hindi
+
+    # Direct check with "dhan" -> "Paddy"
+    res_dhan = await tool_find_products("dhan", "sowing", phone)
+    assert len(res_dhan) > 0
+    assert all(p["crop"] == "Paddy" for p in res_dhan)
+
+    # Direct check with "mirchi" -> "Hot Pepper (Chilli)"
+    res_mirchi = await tool_find_products("mirchi", "sowing", phone)
+    assert len(res_mirchi) > 0
+    assert all(p["crop"] == "Hot Pepper (Chilli)" for p in res_mirchi)
 
     # 5. Mock responses for full turn simulation
     mock_responses = [

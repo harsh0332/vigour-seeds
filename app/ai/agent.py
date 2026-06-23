@@ -133,158 +133,6 @@ async def get_conversation_history(phone: str, limit: int = 15) -> List[Dict[str
         )
         return []
 
-CROP_SYNONYM_MAP = {
-    # Maize
-    "maize": "Maize",
-    "corn": "Maize",
-    "makka": "Maize",
-    "makki": "Maize",
-    "मक्का": "Maize",
-    "bhutta": "Maize",
-    "bhutta / corn": "Maize",
-    
-    # Soybean
-    "soybean": "Soybean",
-    "soyabean": "Soybean",
-    "soya": "Soybean",
-    "सोयाबीन": "Soybean",
-    "सोया": "Soybean",
-    
-    # Paddy
-    "paddy": "Paddy",
-    "rice": "Paddy",
-    "dhan": "Paddy",
-    "chawal": "Paddy",
-    "धान": "Paddy",
-    "चावल": "Paddy",
-    "धान / चावल": "Paddy",
-    
-    # Wheat
-    "wheat": "Wheat",
-    "gehu": "Wheat",
-    "gehoon": "Wheat",
-    "gehuan": "Wheat",
-    "गेहूं": "Wheat",
-    "गेहूँ": "Wheat",
-    "kanak": "Wheat",
-    
-    # Okra
-    "okra": "Okra",
-    "bhindi": "Okra",
-    "bhendi": "Okra",
-    "भिंडी": "Okra",
-    "भिन्डी": "Okra",
-    
-    # Hot Pepper / Chilli
-    "hot pepper": "Hot Pepper (Chilli)",
-    "chilli": "Hot Pepper (Chilli)",
-    "chili": "Hot Pepper (Chilli)",
-    "mirch": "Hot Pepper (Chilli)",
-    "mirchi": "Hot Pepper (Chilli)",
-    "hot pepper (chilli)": "Hot Pepper (Chilli)",
-    "pepper": "Hot Pepper (Chilli)",
-    "मिर्च": "Hot Pepper (Chilli)",
-    "मिर्ची": "Hot Pepper (Chilli)",
-    
-    # Chickpea / Chana
-    "chickpea": "Chickpea (Chana)",
-    "chana": "Chickpea (Chana)",
-    "channa": "Chickpea (Chana)",
-    "gram": "Chickpea (Chana)",
-    "bengal gram": "Chickpea (Chana)",
-    "चना": "Chickpea (Chana)",
-    
-    # Tomato
-    "tomato": "Tomato",
-    "tamatar": "Tomato",
-    "टमाटर": "Tomato",
-    
-    # Bajra
-    "bajra": "Bajra (Pearl Millet)",
-    "bajra (pearl millet)": "Bajra (Pearl Millet)",
-    "pearl millet": "Bajra (Pearl Millet)",
-    "बाजरा": "Bajra (Pearl Millet)",
-    
-    # Tur
-    "tur": "Tur (Arhar)",
-    "arhar": "Tur (Arhar)",
-    "tuar": "Tur (Arhar)",
-    "अरहर": "Tur (Arhar)",
-    "अरहर / तुर": "Tur (Arhar)",
-    
-    # Cumin
-    "cumin": "Cumin (Jeera)",
-    "jeera": "Cumin (Jeera)",
-    "zira": "Cumin (Jeera)",
-    "जीरा": "Cumin (Jeera)",
-    
-    # Mustard
-    "mustard": "Mustard",
-    "sarso": "Mustard",
-    "sarson": "Mustard",
-    "rai": "Mustard",
-    "सरसों": "Mustard",
-    
-    # Sesame
-    "sesame": "Sesame (Til)",
-    "til": "Sesame (Til)",
-    "तिल": "Sesame (Til)",
-    
-    # Sunflower
-    "sunflower": "Sunflower",
-    "सूरजमुखी": "Sunflower",
-    
-    # Moong
-    "green gram": "Green Gram (Moong)",
-    "moong": "Green Gram (Moong)",
-    "मूंग": "Green Gram (Moong)",
-    
-    # Urad
-    "black gram": "Black Gram (Urad)",
-    "urad": "Black Gram (Urad)",
-    "उड़द": "Black Gram (Urad)",
-    
-    # Jowar
-    "sorghum": "Sorghum (Jowar)",
-    "jowar": "Sorghum (Jowar)",
-    "ज्वार": "Sorghum (Jowar)",
-    
-    # Brinjal
-    "brinjal": "Brinjal (Baingan)",
-    "baingan": "Brinjal (Baingan)",
-    "बैंगन": "Brinjal (Baingan)",
-    
-    # Bitter Gourd
-    "bitter gourd": "Bitter Gourd (Karela)",
-    "karela": "Bitter Gourd (Karela)",
-    "करेला": "Bitter Gourd (Karela)",
-    
-    # Bottle Gourd
-    "bottle gourd": "Bottle Gourd (Lauki)",
-    "lauki": "Bottle Gourd (Lauki)",
-    "लौकी": "Bottle Gourd (Lauki)",
-    
-    # Ridge Gourd
-    "ridge gourd": "Ridge Gourd (Turai)",
-    "turai": "Ridge Gourd (Turai)",
-    "तुरई": "Ridge Gourd (Turai)",
-    
-    # Sponge Gourd
-    "sponge gourd": "Sponge Gourd",
-    "gilki": "Sponge Gourd",
-    "गिल्की": "Sponge Gourd",
-    
-    # Watermelon
-    "watermelon": "Watermelon (Tarbooj)",
-    "tarbooj": "Watermelon (Tarbooj)",
-    "तरबूज": "Watermelon (Tarbooj)",
-    
-    # Muskmelon
-    "muskmelon": "Muskmelon (Kharbuja)",
-    "kharbuja": "Muskmelon (Kharbuja)",
-    "खरबूजा": "Muskmelon (Kharbuja)"
-}
-
 CANONICAL_PRODUCT_CROP_MAP = {
     "Maize / Corn": "Maize",
     "Paddy / Rice": "Paddy",
@@ -292,23 +140,15 @@ CANONICAL_PRODUCT_CROP_MAP = {
     "Hot Pepper (Mirchi)": "Hot Pepper (Chilli)",
 }
 
-def normalize_crop_term(crop_term: str) -> str:
-    if not crop_term:
-        return ""
-    term_clean = crop_term.strip().lower()
-    
-    # Sort synonym keys by length descending to match longer strings first
-    for syn_key, canonical in sorted(CROP_SYNONYM_MAP.items(), key=lambda x: len(x[0]), reverse=True):
-        if syn_key in term_clean or term_clean in syn_key:
-            return canonical
-            
-    return crop_term
-
 async def find_crop_by_name(name: str) -> Optional[Any]:
     if not name:
         return None
     
-    norm_name = normalize_crop_term(name)
+    from app.data.crop_synonyms import resolve_crop
+    norm_name = resolve_crop(name)
+    if not norm_name:
+        norm_name = name
+        
     crops = await crops_repo.list_in_catalog()
     
     name_clean = name.strip().lower()
@@ -362,22 +202,29 @@ async def tool_find_products(crop: str, problem: str, phone: Optional[str] = Non
             region = get_state_code(state)
             irrigation_type = "Irrigated" if session.collected_json.get("total_land") else "Rainfed"
 
-    # Try mapping crop name to canonical
-    # 1. Use the synonym map to resolve to standard name
-    canonical_crop = normalize_crop_term(crop)
-    
-    # 2. Or look up in Crops table
-    crop_row = await find_crop_by_name(crop)
-    if crop_row:
-        canonical_crop = CANONICAL_PRODUCT_CROP_MAP.get(crop_row.crop_name_en, crop_row.crop_name_en)
+    from app.data.crop_synonyms import resolve_crop
+
+    canonical = resolve_crop(crop)
+    if canonical is not None:
+        canonical_crop = canonical
     else:
-        # If we got a normalized name, try to lookup that normalized name in Crops table
-        crop_row_norm = await find_crop_by_name(canonical_crop)
-        if crop_row_norm:
-            canonical_crop = CANONICAL_PRODUCT_CROP_MAP.get(crop_row_norm.crop_name_en, crop_row_norm.crop_name_en)
-            
-    # As a final safeguard, apply the map one more time
-    canonical_crop = CANONICAL_PRODUCT_CROP_MAP.get(canonical_crop, canonical_crop)
+        # Fall back to case-insensitive partial match
+        crops = await crops_repo.list_in_catalog()
+        crop_arg_lower = crop.lower().strip()
+        matched_crop_row = None
+        for c in crops:
+            crop_en = (c.crop_name_en or "").lower()
+            crop_hi = (c.crop_name_hi or "").lower()
+            if crop_arg_lower in crop_en or crop_en in crop_arg_lower or \
+               crop_arg_lower in crop_hi or crop_hi in crop_arg_lower:
+                matched_crop_row = c
+                break
+        
+        if matched_crop_row:
+            canonical_crop = CANONICAL_PRODUCT_CROP_MAP.get(matched_crop_row.crop_name_en, matched_crop_row.crop_name_en)
+        else:
+            # If still nothing, return empty
+            return []
 
     rule = await rules_repo.match(canonical_crop, stage, problem, irrigation_type, region)
     if not rule and problem != "-":
