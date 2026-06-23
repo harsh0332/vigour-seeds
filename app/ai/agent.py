@@ -958,6 +958,12 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
     return reply_message
 
 async def respond(phone: str, message: NormalizedMessage) -> str:
+    if message.text and message.text.strip().lower() == "/reset":
+        await sessions_repo.delete(phone)
+        from app.db.repositories.conversations import conversations_repo
+        await conversations_repo.delete(phone)
+        return "बातचीत रीसेट हो गई। नमस्ते!"
+
     distributor = await distributors_repo.get_active_by_phone(phone)
     if distributor:
         return await run_distributor_agent_loop(phone, message, distributor)

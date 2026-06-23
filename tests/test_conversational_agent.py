@@ -660,3 +660,54 @@ async def test_sc9_multi_field_extraction():
         
         last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
         assert "भूमि" in last_msg or "ज़मीन" in last_msg
+
+@pytest.mark.asyncio
+async def test_conversational_testing_reset():
+    phone = "919000000030"
+    
+    # Setup session
+    await sessions_repo.upsert(phone, {
+        "current_step": "STEP_5",
+        "collected_json": {
+            "greeted": True,
+            "name": "रामजी"
+        }
+    })
+    
+    # Log a message in conversations repository
+    from app.db.repositories.conversations import conversations_repo
+    await conversations_repo.log({
+        "whatsapp_phone": phone,
+        "direction": "inbound",
+        "message_text": "hello",
+        "message_id": "wamid.dummy1",
+        "lead_id": "L123",
+        "message_type": "text",
+        "handled_by": "bot"
+    })
+    
+    session_before = await sessions_repo.get(phone)
+    assert session_before is not None
+    
+    # Send /reset command
+    msg = ParsedMessage(
+        wamid="wamid.reset",
+        from_phone=phone,
+        type="text",
+        text="/reset",
+        timestamp="1718563800"
+    )
+    await conversation_router.route_message(msg)
+    
+    # Verify response message
+    last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+    assert last_msg == "बातचीत रीसेट हो गई। नमस्ते!"
+    
+    # Verify DB rows cleared
+    session_after = await sessions_repo.get(phone)
+    assert session_after is None
+    
+    from app.db.client import supabase_client
+    res = supabase_client.table("conversations").select("*").eq("whatsapp_phone", phone).execute()
+    assert len(res.data) == 0
+
