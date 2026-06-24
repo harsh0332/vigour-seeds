@@ -18,7 +18,7 @@ def normalize_and_hash_phone(phone: str) -> str:
     hashed = hashlib.sha256(digits.encode("utf-8")).hexdigest()
     return hashed
 
-async def export_retargeting_audience() -> Tuple[Optional[str], int]:
+async def export_retargeting_audience(export_dir: Optional[str] = None) -> Tuple[Optional[str], int]:
     """
     Queries cold/closed_lost farmer and distributor leads, hashes their phone numbers,
     and writes them to a CSV file in the conversation artifacts directory.
@@ -72,10 +72,18 @@ async def export_retargeting_audience() -> Tuple[Optional[str], int]:
         return None, 0
 
     # Ensure export directory exists
-    conv_id = os.environ.get("CONVERSATION_ID", "c9bb5cc3-7a82-4978-a1a6-235ec0fbcbf0")
-    # Base path in artifacts
-    export_dir = f"/Users/harshchouksey/.gemini/antigravity/brain/{conv_id}"
-    os.makedirs(export_dir, exist_ok=True)
+    if not export_dir:
+        export_dir = os.environ.get("RETARGETING_EXPORT_DIR")
+    if not export_dir:
+        conv_id = os.environ.get("CONVERSATION_ID", "c9bb5cc3-7a82-4978-a1a6-235ec0fbcbf0")
+        export_dir = f"/Users/harshchouksey/.gemini/antigravity/brain/{conv_id}"
+
+    try:
+        os.makedirs(export_dir, exist_ok=True)
+    except PermissionError:
+        # Fallback to local exports directory if we lack permissions to the default path
+        export_dir = os.path.join(os.getcwd(), "exports")
+        os.makedirs(export_dir, exist_ok=True)
     
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     file_name = f"retargeting_export_{timestamp}.csv"

@@ -111,7 +111,7 @@ def test_normalize_and_hash_phone():
     assert normalize_and_hash_phone(phone) == expected_hash
 
 @pytest.mark.asyncio
-async def test_export_retargeting_audience():
+async def test_export_retargeting_audience(tmp_path):
     # Clear and seed Leads database
     in_memory_db.clear_all()
     
@@ -169,7 +169,7 @@ async def test_export_retargeting_audience():
         "source_channel": "whatsapp_organic"
     })
 
-    file_path, count = await export_retargeting_audience()
+    file_path, count = await export_retargeting_audience(export_dir=str(tmp_path))
     assert count == 2
     assert file_path is not None
     assert os.path.exists(file_path)
