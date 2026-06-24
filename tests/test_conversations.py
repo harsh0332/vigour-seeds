@@ -676,3 +676,109 @@ async def test_no_broken_placeholder_text():
         
         last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
         assert "स्पष्ट लक्षण नहीं हैं" not in last_msg
+
+@pytest.mark.asyncio
+async def test_no_reask_beej_kapatanahi():
+    """
+    Asserts: If farmer says "beej ka pata nahi" and asks what to do for maize small grains,
+    the agent provides advice and does NOT re-ask what seed/variety was sown.
+    """
+    phone = "919000001080"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "name": "रामलाल",
+            "crop": "Maize",
+            "problem_summary": "दाने छोटे आ रहे हैं",
+            "crop_stage": "40 दिन"
+        }
+    })
+    mock_whatsapp_client.clear()
+
+    # The mock returns find_products and then a final reply with nutrient management advice.
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Maize", "problem": "दाने छोटे"},
+        {"action": "reply", "message": "रामलाल जी, मक्के में दाने छोटे होने पर नाइट्रोजन, जिंक और बोरॉन का छिड़काव करें। मंजर आने पर सिंचाई ज़रूर करें। आप हमारा Vigour Maize 99 बीज आज़मा सकते हैं।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.beej_unknown",
+            from_phone=phone,
+            type="text",
+            text="40 din ho gaye, beej ka pata nahi mujhe",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        
+        # Verify it provides nutrient advice and seed name, and does not ask about seed name again.
+        assert "नाइट्रोजन" in last_msg or "जिंक" in last_msg
+        assert "Vigour Maize 99" in last_msg
+        assert "बीज" in last_msg
+        assert "कौन सा" not in last_msg
+
+@pytest.mark.asyncio
+async def test_no_consecutive_asks():
+    """
+    Asserts: The agent loop guard prevents two question-only ("ask") turns in a row.
+    If the last bot message ends with a "?", and the agent tries to return "action": "ask",
+    the code intercepts and forces it to generate a final reply with advice.
+    """
+    phone = "919000001081"
+    await sessions_repo.delete(phone)
+    
+    from app.db.repositories.conversations import conversations_repo
+    await conversations_repo.delete(phone)
+    # Insert a previous question from bot into history
+    await conversations_repo.log({
+        "whatsapp_phone": phone,
+        "direction": "inbound",
+        "message_text": "Hye",
+        "wamid": "prev_inbound_wamid",
+        "message_id": "msg_prev_inbound",
+        "lead_id": "L_test_consecutive",
+        "message_type": "text",
+        "handled_by": "bot"
+    })
+    await conversations_repo.log({
+        "whatsapp_phone": phone,
+        "direction": "outbound",
+        "message_text": "मक्के की फसल अभी कितने दिन की है?",
+        "wamid": "prev_outbound_wamid",
+        "message_id": "msg_prev_outbound",
+        "lead_id": "L_test_consecutive",
+        "message_type": "text",
+        "handled_by": "bot"
+    })
+    
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "crop": "Maize",
+            "problem_summary": "दाने छोटे"
+        }
+    })
+    mock_whatsapp_client.clear()
+
+    # The agent returns "ask" first, but the guard blocks it and requests "reply" in the next loop.
+    mock_responses = make_mock_complete_sequence([
+        {"action": "ask", "message": "क्या आपने यूरिया डाला था?"},
+        {"action": "reply", "message": "मक्के में दाने भरने के समय पर्याप्त सिंचाई और जिंक की कमी दूर करने के उपाय करें।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.consecutive_q",
+            from_phone=phone,
+            type="text",
+            text="40 din",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        
+        # Assert it gave the advice instead of the question
+        assert "सिंचाई" in last_msg
+        assert "यूरिया डाला" not in last_msg
