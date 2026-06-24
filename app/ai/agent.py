@@ -309,19 +309,21 @@ ADVISOR_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour 
 {dealer_data}
 पहले से अनुशंसित उत्पाद (Already Recommended): {already_recommended}
 
+मत्वपूर्ण निर्देश: हमेशा व्यावहारिक कृषि सलाह पहले दें (Advice First) और उत्पाद की सिफ़ारिश उसके बाद दूसरे नंबर पर (Product Second) एक मददगार विकल्प के रूप में ही करें (कभी भी थोपने वाली शैली न अपनाएं)।
+
 Your Task:
 किसान भाई के संदेश का जवाब दें।
-1. **कृषि वैज्ञानिक सलाह (Agronomist Advice)**:
-   यदि वे खेती, खाद-पानी, कीड़े-बीमारी या मौसम से जुड़े सवाल पूछते हैं, तो 1-2 छोटी लाइनों में व्यावहारिक सलाह दें। रासायनिक दवाओं या मात्रा के लिए डीलर/कृषि अधिकारी से पुष्टि करने के लिए कहें।
-2. **उत्पाद और डीलर (Product & Dealer)**:
-   यदि वे उत्पाद के बारे में पूछते हैं, तो केवल तभी संक्षेप में बताएं जब वह पहले से अनुशंसित (Already Recommended) न हो। दोहराव से बचें। डीलर ({dealer_data}) की जानकारी साझा करें।
+1. **कृषि वैज्ञानिक सलाह (Agronomist Advice - First)**:
+   यदि वे खेती, खाद-पानी, कीड़े-बीमारी या मौसम से जुड़े सवाल पूछते हैं, तो 1-2 छोटी लाइनों में व्यावहारिक सलाह दें। रासायनिक दवाओं या कीटनाशकों के संबंध में हमेशा कहें: "सही दवा और मात्रा के लिए नज़दीकी डीलर/कृषि अधिकारी से पुष्टि करें" — कभी भी कोई डोज/संख्या खुद से न बनाएं।
+2. **उत्पाद और डीलर (Product & Dealer - Second)**:
+   यदि वे उत्पाद के बारे में पूछते हैं या उत्पाद का उल्लेख प्रासंगिक है, तो केवल तभी संक्षेप में बताएं जब वह पहले से अनुशंसित (Already Recommended) न हो। दोहराव से बचें। डीलर ({dealer_data}) की जानकारी साझा करें।
 3. **आत्मीयता**:
    यदि वे धन्यवाद, ठीक है, या बातचीत खत्म करने वाली बातें बोलते हैं, तो बहुत ही आत्मीयता से बातचीत को समाप्त करें (कोई उत्पाद पिच न करें)।
 
 महत्वपूर्ण नियम:
 - **केवल 2 से 5 छोटी लाइनें** ही लिखें।
 - "पिछले 15-20 दिनों में कौन सी खाद/दवा डाली" - यह प्रश्न अब बिल्कुल भी नहीं पूछना है।
-- कोई भी काल्पनिक या नकली Vigour उत्पाद का नाम न बताएं।
+- **सुरक्षा और सच्चाई**: कोई भी काल्पनिक या नकली Vigour उत्पाद का नाम न बताएं। रासायनिक दवाओं या कीटनाशकों के लिए हमेशा कहें: "सही दवा और मात्रा के लिए नज़दीकी डीलर/कृषि अधिकारी से पुष्टि करें" — कभी भी कोई डोज या संख्या खुद से मनगढ़ंत न लिखें।
 
 केवल किसान को भेजे जाने वाला शुद्ध संदेश लिखें। कोई JSON या अतिरिक्त टेक्स्ट न लिखें।"""
 
@@ -476,41 +478,44 @@ def format_product_list_response(farmer_name: str, crop: str, products: list, de
     addr = get_farmer_addressing(farmer_name)
     addr_bhai = addr["bhai"]
     
+    crop_translations = {
+        "soybean": "सोयाबीन",
+        "paddy": "धान",
+        "cotton": "कपास",
+        "maize": "मक्का",
+        "wheat": "गेहूं",
+        "mustard": "सरसों"
+    }
+    crop_display = crop_translations.get(crop.lower().strip(), crop)
+    
     if not products:
-        return f"माफ़ कीजिएगा {addr_bhai}, अभी हमारे पास {crop} के लिए कोई अनुमोदित Vigour बीज उपलब्ध नहीं हैं।"
+        lines = [f"माफ़ कीजिएगा {addr_bhai}, अभी हमारे पास {crop_display} के लिए कोई अनुमोदित Vigour बीज उपलब्ध नहीं हैं।"]
+        dealers = dealer_info.get("dealers", [])
+        if dealers:
+            lines.append("\n📍 बीज की उपलब्धता के लिए आप हमारे नज़दीकी डीलर से संपर्क कर सकते हैं:")
+            for d in dealers[:2]:
+                lines.append(f"• {d['shop_name']} - {d['contact_name']} (फ़ोन: {d['phone']})")
+        elif dealer_info.get("sales_rep"):
+            lines.append(f"\n📍 हमारे सेल्स प्रतिनिधि से संपर्क करें: {dealer_info['sales_rep']}")
+        else:
+            lines.append(f"\n📍 अधिक जानकारी के लिए संपर्क करें: {dealer_info.get('company_contact', 'Vigour Seeds Support (+91 99999 99999)')}")
+        return "\n".join(lines)
         
-    lines = [f"नमस्ते {addr_bhai}! हमारी {crop} फसल के लिए प्रमुख किस्मों (seeds) की जानकारी नीचे दी गई है:\n"]
-    for idx, p in enumerate(products, 1):
+    lines = [f"नमस्ते {addr_bhai}! हमारी {crop_display} फसल के लिए प्रमुख किस्मों की जानकारी नीचे दी गई है:\n"]
+    for idx, p in enumerate(products[:3], 1):
         name = p.get("variety_name", "")
         traits = p.get("key_traits", "")
-        duration = p.get("duration_days", "")
-        mrp = p.get("mrp_inr")
-        pack = p.get("pack_size", "")
-        
-        price_str = ""
-        if mrp is None or mrp == 0:
-            price_str = "दाम के लिए नज़दीकी डीलर से पूछें"
-        else:
-            price_str = f"₹{mrp}"
-            if pack:
-                price_str += f" ({pack})"
-                
-        lines.append(f"{idx}. *{name}*")
-        if traits:
-            lines.append(f"   • विशेषताएँ: {traits}")
-        if duration:
-            lines.append(f"   • समय सीमा: {duration} दिन")
-        lines.append(f"   • मूल्य: {price_str}\n")
+        lines.append(f"{idx}. *{name}* - {traits}")
         
     dealers = dealer_info.get("dealers", [])
     if dealers:
-        lines.append("📍 *नज़दीकी डीलर की जानकारी:*")
+        lines.append("\n📍 ये किस्में खरीदने के लिए अपने नज़दीकी डीलर से संपर्क करें:")
         for d in dealers[:2]:
             lines.append(f"• {d['shop_name']} - {d['contact_name']} (फ़ोन: {d['phone']})")
     elif dealer_info.get("sales_rep"):
-        lines.append(f"📍 हमारे सेल्स प्रतिनिधि से संपर्क करें: {dealer_info['sales_rep']}")
+        lines.append(f"\n📍 हमारे सेल्स प्रतिनिधि से संपर्क करें: {dealer_info['sales_rep']}")
     else:
-        lines.append(f"📍 अधिक जानकारी के लिए संपर्क करें: {dealer_info.get('company_contact', 'Vigour Seeds Support (+91 99999 99999)')}")
+        lines.append(f"\n📍 अधिक जानकारी के लिए संपर्क करें: {dealer_info.get('company_contact', 'Vigour Seeds Support (+91 99999 99999)')}")
         
     lines.append(f"\nखेती-बाड़ी से जुड़े किसी भी अन्य सवाल के लिए आप यहाँ पूछ सकते हैं।")
     return "\n".join(lines)
@@ -660,7 +665,7 @@ def handle_unclear_or_out_of_scope(extracted: dict, collected: dict, last_reply:
             if not crop:
                 return f"{addr_kisan}, आइए हम आपकी फसल से शुरुआत करते हैं। आप अभी अपने खेत में कौन सी फसल उगा रहे हैं?"
             elif not problem or is_empty_or_placeholder_problem(problem):
-                return f"ठीक है, चलिए आपकी {crop} फसल के बारे में बात करते हैं। {addr_bhai}, आपकी {crop} में अभी क्या समस्या या बीमारी आ रही है?"
+                return f"ठीक है, चलिए आपकी {crop} फसल के बारे में बात करते हैं। {addr_bhai}, आपकी {crop} फसल में अभी क्या दिक्कत आ रही है?"
             else:
                 return f"{addr_kisan}, आपकी {crop} फसल और {problem} की समस्या के बारे में हम सही Vigour बीज और डीलर की जानकारी दे सकते हैं। क्या आप डीलर का पता जानना चाहते हैं?"
 
@@ -815,7 +820,7 @@ async def tool_find_products(crop: str, problem: str, phone: Optional[str] = Non
     rule = await rules_repo.match(canonical_crop, stage, problem, irrigation_type, region)
     if not rule and problem != "-":
         rule = await rules_repo.match(canonical_crop, stage, "-", irrigation_type, region)
-    if not rule:
+    if not rule and (not canonical_crop or canonical_crop == "Any"):
         rule = await rules_repo.match("Any", "Any", "unclear_problem", "Any", "Any")
         
     matched_products = []
@@ -832,7 +837,7 @@ async def tool_find_products(crop: str, problem: str, phone: Optional[str] = Non
     if not matched_products:
         crop_products = await products_repo.list_by_crop(canonical_crop)
         for p in crop_products:
-            if p.approved_for_recommendation == "Y":
+            if p.approved_for_recommendation == "Y" and p.crop.lower() == canonical_crop.lower():
                 fit = (p.target_problem_fit or "").lower()
                 if problem.lower() in fit or any(w in fit for w in problem.lower().split("_")):
                      matched_products.append(p)
@@ -840,21 +845,22 @@ async def tool_find_products(crop: str, problem: str, phone: Optional[str] = Non
         
     if not matched_products:
         crop_products = await products_repo.list_by_crop(canonical_crop)
-        matched_products = [p for p in crop_products if p.approved_for_recommendation == "Y"][:3]
+        matched_products = [p for p in crop_products if p.approved_for_recommendation == "Y" and p.crop.lower() == canonical_crop.lower()][:3]
         
     res_list = []
     for p in matched_products:
-        res_list.append({
-            "variety_name": p.variety_name,
-            "crop": p.crop,
-            "duration_days": p.duration_days,
-            "key_traits": p.key_traits,
-            "target_problem_fit": p.target_problem_fit,
-            "pest_disease_tolerance": p.pest_disease_tolerance,
-            "dosage": None,
-            "mrp_inr": p.mrp_inr,
-            "pack_size": p.pack_size
-        })
+        if p.crop.lower() == canonical_crop.lower():
+            res_list.append({
+                "variety_name": p.variety_name,
+                "crop": p.crop,
+                "duration_days": p.duration_days,
+                "key_traits": p.key_traits,
+                "target_problem_fit": p.target_problem_fit,
+                "pest_disease_tolerance": p.pest_disease_tolerance,
+                "dosage": None,
+                "mrp_inr": p.mrp_inr,
+                "pack_size": p.pack_size
+            })
     variety_names = [p["variety_name"] for p in res_list]
     logger.info(f"find_products runs: crop_arg={crop}, resolved_canonical_crop={canonical_crop}, variety_names={variety_names}")
     return res_list
@@ -1417,7 +1423,7 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
     last_bot_q = collected.get("last_bot_question") or ""
     
     # Intercept list-products query
-    if current_step in ["STEP_6", "STEP_7", "STEP_8", "STEP_ADVISOR"] and is_list_products_request(user_input):
+    if is_list_products_request(user_input):
         crop = collected.get("crop")
         if not crop:
             reply_message = "आप किस फसल के बीजों/उत्पादों के बारे में जानना चाहते हैं? (जैसे: सोयाबीन, धान, मक्का)"

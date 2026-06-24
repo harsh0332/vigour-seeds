@@ -49,6 +49,13 @@ Run the pytest test suite:
 PYTHONPATH=. pytest tests/
 ```
 
+### Regression Tests
+Run the specific conversation-level regression test suite:
+```bash
+PYTHONPATH=. pytest tests/test_conversations.py
+```
+This suite covers core user interactions, agent flows, intent classifications, and product recommendation safeguards completely offline. It is highly recommended to run this suite before pushing any code changes or deploying to staging/production.
+
 ### Docker Verification
 Build and run the container locally:
 ```bash

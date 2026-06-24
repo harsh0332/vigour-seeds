@@ -1893,5 +1893,59 @@ async def test_sc_placeholder_problem_handling():
         await conversation_router.route_message(msg)
         last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
         assert "स्पष्ट लक्षण नहीं हैं" not in last_msg
-        assert "क्या समस्या या बीमारी आ रही है" in last_msg
+        assert "क्या दिक्कत आ रही है" in last_msg
+
+
+@pytest.mark.asyncio
+async def test_sc_list_products_no_crop():
+    phone = "919000000099"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "name": "महिपाल",
+            "district": "Dhar",
+            "state": "Madhya Pradesh",
+            "total_land": 10.0,
+            "water_source": "ट्यूबवेल"
+        }
+    })
+    msg = ParsedMessage(
+        wamid="wamid.test_no_crop",
+        from_phone=phone,
+        type="text",
+        text="saare product batao",
+        timestamp="1718563800"
+    )
+    await conversation_router.route_message(msg)
+    last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+    assert "आप किस फसल के बीजों" in last_msg
+
+
+@pytest.mark.asyncio
+async def test_sc_list_products_zero_approved():
+    phone = "919000000100"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "name": "महिपाल",
+            "district": "Dhar",
+            "state": "Madhya Pradesh",
+            "total_land": 10.0,
+            "water_source": "ट्यूबवेल",
+            "crop": "Dhaniya"
+        }
+    })
+    msg = ParsedMessage(
+        wamid="wamid.test_zero_approved",
+        from_phone=phone,
+        type="text",
+        text="Veegor ke saare product batao",
+        timestamp="1718563800"
+    )
+    await conversation_router.route_message(msg)
+    last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+    assert "कोई अनुमोदित Vigour बीज उपलब्ध नहीं हैं" in last_msg
+    assert "संपर्क" in last_msg
 
