@@ -1066,3 +1066,112 @@ async def test_image_received_short_circuit_no_analyze():
         mock_complete.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_vigour_seeds_only_identity():
+    """
+    Asserts: Asking for Vigour medicine checks that the prompt contains identity rules,
+    and returns a seeds-only explanation instead of promising a human callback.
+    """
+    phone = "919000001999"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    captured_system_instructions = []
+
+    async def mock_complete(system, user, json_mode=False):
+        captured_system_instructions.append(system)
+        return json.dumps({
+            "action": "reply",
+            "message": "किसान भाई, Vigour Seeds सिर्फ अच्छे बीज बनाती है, दवा नहीं। दवा/कीटनाशक के लिए आप अपने नज़दीकी कृषि डीलर से सही उत्पाद और मात्रा पूछ सकते हैं।"
+        })
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_complete)):
+        msg = ParsedMessage(
+            wamid="wamid.dawai_test",
+            from_phone=phone,
+            type="text",
+            text="Vigour ki koi dawai aati hai kya?",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        
+        # Verify prompt constraints were injected
+        assert len(captured_system_instructions) > 0
+        system_prompt = captured_system_instructions[0]
+        assert "Vigour Seeds केवल अच्छे और उच्च पैदावार वाले बीज (seeds) बनाती है" in system_prompt
+        assert "दवा, कीटनाशक" in system_prompt
+
+        # Verify the reply politely declines medicine and suggests dealer
+        assert "सिर्फ अच्छे बीज" in last_msg
+        assert "दवा नहीं" in last_msg
+        assert "कृषि डीलर" in last_msg
+        assert "कृषि विशेषज्ञ" not in last_msg  # Should NOT fall back to human callback
+
+
+@pytest.mark.asyncio
+async def test_generic_fallback_conversational_on_json_failure():
+    """
+    Asserts: If agent fails to return valid JSON twice, the fallback reply is conversational
+    and does not promise a human callback.
+    """
+    phone = "919000002000"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    # Return invalid JSON on all attempts
+    async def mock_complete(system, user, json_mode=False):
+        return "invalid non-json text response {"
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_complete)):
+        msg = ParsedMessage(
+            wamid="wamid.json_failure_test",
+            from_phone=phone,
+            type="text",
+            text="hello",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        
+        # Verify we get the safe conversational fallback
+        assert last_msg == "किसान भाई, ज़रा फिर से बताइए — आपकी फसल या समस्या क्या है? मैं मदद करता हूँ।"
+        assert "कृषि विशेषज्ञ" not in last_msg
+
+
+@pytest.mark.asyncio
+async def test_generic_fallback_conversational_on_loop_limit():
+    """
+    Asserts: If agent exceeds maximum tool loop count, the fallback reply is conversational
+    and does not promise a human callback.
+    """
+    phone = "919000002001"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    # Return tool call action indefinitely, causing max loop limit to be exceeded
+    async def mock_complete(system, user, json_mode=False):
+        return json.dumps({
+            "action": "save_profile",
+            "fields": {
+                "crop": "Maize"
+            }
+        })
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_complete)):
+        msg = ParsedMessage(
+            wamid="wamid.loop_limit_test",
+            from_phone=phone,
+            type="text",
+            text="makka",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        
+        # Verify we get the safe conversational fallback
+        assert last_msg == "किसान भाई, ज़रा फिर से बताइए — आपकी फसल या समस्या क्या है? मैं मदद करता हूँ।"
+        assert "कृषि विशेषज्ञ" not in last_msg
+
+
+

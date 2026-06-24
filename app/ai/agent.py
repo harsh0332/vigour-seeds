@@ -1314,6 +1314,7 @@ Vigour Seeds विश्वसनीय बीज उत्पादक है 
 GROUNDING नियम (STRICT GROUNDING & AGRONOMY):
 - हमेशा सलाह पहले दें, फिर उत्पाद (Advice-first, then product)।
 - मक्के में दाने छोटे होने/कम वजन (poor grain filling) जैसी समस्याओं के लिए, 2–4 छोटी पंक्तियों में व्यावहारिक हिंदी सलाह दें — जैसे पोषक तत्वों का प्रबंधन (नाइट्रोजन, जिंक, बोरॉन), दाने भरने/मंजर आने के समय पर्याप्त सिंचाई, गर्मी का तनाव, और संतुलित खाद का उपयोग। इसके बाद ही आवश्यकतानुसार Vigour के उपयुक्त मक्का उत्पाद (जो `find_products` के रिस्पॉन्स में मिला हो) को सुझाएं।
+- **Vigour Seeds की पहचान (Vigour Seeds ONLY makes Seeds)**: Vigour Seeds केवल अच्छे और उच्च पैदावार वाले बीज (seeds) बनाती है — यह कोई भी दवा, कीटनाशक, खरपतवारनाशक या खाद (fertilizers/pesticides/chemicals) नहीं बनाती। अगर किसान पूछता है कि 'Vigour की कोई दवा/कीटनाशक आती है क्या?', तो उसे विनम्रतापूर्वक और स्पष्ट रूप से बताएं: 'किसान भाई, Vigour सिर्फ अच्छे बीज बनाती है, दवा नहीं। दवा/कीटनाशक के लिए आप अपने नज़दीकी कृषि डीलर से सही उत्पाद और मात्रा पूछ सकते हैं।' इसके बाद यदि उसकी फसल के लिए कोई approved Vigour बीज उपलब्ध हो, तो आप `find_products` कॉल करके उस बीज को सुझा सकते हैं। कभी भी किसी काल्पनिक Vigour दवा या कीटनाशक का नाम न बनाएं और न ही ऐसा दिखाएं कि Vigour रसायन बेचती है।
 - **कोई मनगढ़ंत उत्पाद नाम नहीं (NO Fabricated Products)**: किसी भी Vigour बीज या उत्पाद का नाम अपने मन से कभी मत लिखो। उत्पाद का नाम केवल तभी बताओ जब वह इसी turn में `find_products` टूल के रिस्पॉन्स में मिला हो। अगर टूल खाली लौटे (जैसे धनिया/dhaniya के लिए, जिसमें कोई उत्पाद नहीं है), तो ईमानदारी से कहो कि उस फसल के लिए अभी कोई approved Vigour बीज नहीं है और किसान को नजदीकी डीलर से संपर्क करने को कहो। कोई भी काल्पनिक नाम (जैसे 'Vigour Maize 99' या 'Vigour धनिया') कभी मत बनाओ।
 - **बोल्ड फॉर्मेटिंग (Bold formatting)**: जब आप `find_products` टूल से मिले वास्तविक उत्पाद का नाम लिखें, तो उसे WhatsApp में बोल्ड दिखने के लिए सिंगल एस्टरिक्स (asterisks) में रखें, जैसे `*VIGOUR 60A90*` या `*VIGOUR 30A90*`। केवल उत्पाद का नाम ही बोल्ड होना चाहिए, बाकी संदेश साधारण रखें।
 - रासायनिक उर्वरकों/दवाओं की सटीक खुराक या दामों के लिए किसान भाई को नज़दीकी डीलर से पुष्टि करने को कहें।
@@ -1459,7 +1460,7 @@ async def run_agent(phone: str, message: NormalizedMessage) -> str:
                 continue
             else:
                 logger.error("Agent failed JSON twice, falling back to plain reply", extra={"phone": phone, "response": raw_response})
-                reply_message = "नमस्ते 🙏 आपकी मदद के लिए हमारे कृषि विशेषज्ञ जल्द ही आपसे संपर्क करेंगे।"
+                reply_message = "किसान भाई, ज़रा फिर से बताइए — आपकी फसल या समस्या क्या है? मैं मदद करता हूँ।"
                 break
 
         action = data.get("action")
@@ -1622,7 +1623,7 @@ async def run_agent(phone: str, message: NormalizedMessage) -> str:
             break
     else:
         logger.error("Agent exceeded max tool loop count", extra={"phone": phone})
-        reply_message = "आपकी समस्या के समाधान के लिए हमारे कृषि विशेषज्ञ जल्द ही आपसे संपर्क करेंगे। 🙏"
+        reply_message = "किसान भाई, ज़रा फिर से बताइए — आपकी फसल या समस्या क्या है? मैं मदद करता हूँ।"
 
     # Repetition / Duplicate reply guard
     history_sent = collected.get("sent_messages_history", [])
