@@ -267,7 +267,9 @@ def check_for_fabricated_products(reply_text: str, approved_products: list) -> b
     # Non-product allowed prefixes (lowercased)
     allowed_prefixes = [
         "vigour seeds", "vigour seed", "vigour मित्र", "vigour मित्रा", 
-        "vigour सीड", "vigour सीड्स", "vigour co", "vigour company"
+        "vigour सीड", "vigour सीड्स", "vigour co", "vigour company",
+        "vigour उत्पाद", "vigour बीज", "vigour बीजों", "vigour product",
+        "vigour products", "vigour variety", "vigour varieties", "approved vigour"
     ]
     
     # Find all occurrences of the word "vigour"
@@ -1306,12 +1308,15 @@ Vigour Seeds विश्वसनीय बीज उत्पादक है 
 6. अधिकतम 1 छोटा फॉलो-अप सवाल पूछ सकते हैं। उसके बाद, जो जानकारी उपलब्ध है उसी के आधार पर सबसे अच्छी सलाह दें — सलाह को और जानकारी के इंतज़ार में मत रोकें।
 7. अगर किसान पहले ही समस्या बता चुका है (जैसे 'दाने छोटे आ रहे हैं'), तो "किस तरह की मदद चाहिए?" या "क्या समस्या है?" दोबारा मत पूछें — सीधे उस समस्या का समाधान बताएं।
 8. किसी मेन्यू, बटन या विकल्प सूची का ज़िक्र न करें — खुली, स्वाभाविक बातचीत करें।
+9. **जवाबों को छोटा रखें (Shorter Replies)**: अपने जवाबों को छोटा और WhatsApp-अनुकूल रखें — सामान्यतः 2 से 4 छोटी पंक्तियाँ। महत्वपूर्ण सलाह संक्षेप में दें और बहुत लंबे पैराग्राफ लिखने से बचें।
+10. **फोटो/इमेज का ज़िक्र न करें (No Photo requests)**: किसान से कभी भी फसल की फोटो भेजने के लिए न कहें और न ही फोटो देखने का कोई प्रस्ताव दें। बातचीत में किसी भी प्रकार की फोटो का कोई ज़िक्र नहीं होना चाहिए।
 
 GROUNDING नियम (STRICT GROUNDING & AGRONOMY):
 - हमेशा सलाह पहले दें, फिर उत्पाद (Advice-first, then product)।
-- मक्के में दाने छोटे होने/कम वजन (poor grain filling) जैसी समस्याओं के लिए, 2–4 छोटी पंक्तियों में व्यावहारिक हिंदी सलाह दें — जैसे पोषक तत्वों का प्रबंधन (नाइट्रोजन, जिंक, बोरॉन), दाने भरने/मंजर आने के समय पर्याप्त सिंचाई, गर्मी का तनाव, और संतुलित खाद का उपयोग। इसके बाद ही आवश्यकतानुसार Vigour के उपयुक्त मक्का उत्पाद (जैसे Vigour Maize 99) को `find_products` के आधार पर सुझाएं।
+- मक्के में दाने छोटे होने/कम वजन (poor grain filling) जैसी समस्याओं के लिए, 2–4 छोटी पंक्तियों में व्यावहारिक हिंदी सलाह दें — जैसे पोषक तत्वों का प्रबंधन (नाइट्रोजन, जिंक, बोरॉन), दाने भरने/मंजर आने के समय पर्याप्त सिंचाई, गर्मी का तनाव, और संतुलित खाद का उपयोग। इसके बाद ही आवश्यकतानुसार Vigour के उपयुक्त मक्का उत्पाद (जो `find_products` के रिस्पॉन्स में मिला हो) को सुझाएं।
+- **कोई मनगढ़ंत उत्पाद नाम नहीं (NO Fabricated Products)**: किसी भी Vigour बीज या उत्पाद का नाम अपने मन से कभी मत लिखो। उत्पाद का नाम केवल तभी बताओ जब वह इसी turn में `find_products` टूल के रिस्पॉन्स में मिला हो। अगर टूल खाली लौटे (जैसे धनिया/dhaniya के लिए, जिसमें कोई उत्पाद नहीं है), तो ईमानदारी से कहो कि उस फसल के लिए अभी कोई approved Vigour बीज नहीं है और किसान को नजदीकी डीलर से संपर्क करने को कहो। कोई भी काल्पनिक नाम (जैसे 'Vigour Maize 99' या 'Vigour धनिया') कभी मत बनाओ।
+- **बोल्ड फॉर्मेटिंग (Bold formatting)**: जब आप `find_products` टूल से मिले वास्तविक उत्पाद का नाम लिखें, तो उसे WhatsApp में बोल्ड दिखने के लिए सिंगल एस्टरिक्स (asterisks) में रखें, जैसे `*VIGOUR 60A90*` या `*VIGOUR 30A90*`। केवल उत्पाद का नाम ही बोल्ड होना चाहिए, बाकी संदेश साधारण रखें।
 - रासायनिक उर्वरकों/दवाओं की सटीक खुराक या दामों के लिए किसान भाई को नज़दीकी डीलर से पुष्टि करने को कहें।
-- मनगढ़ंत या काल्पनिक उत्पाद के नाम कभी न बताएं। केवल वही उत्पाद सुझाएं जो `find_products` टूल के रिस्पॉन्स में मिलें।
 - किसी उत्पाद की मनगढ़ंत खुराक, कीमतें, सरकारी योजनाओं की राशि या ब्याज दरें न बनाएं।
 
 किसान की वर्तमान प्रोफाइल जानकारी (Farmer Profile Status):
@@ -1330,10 +1335,6 @@ If you need to call a tool, output a JSON object in one of these formats:
 OR
 {
   "action": "find_dealer"
-}
-OR
-{
-  "action": "analyze_image"
 }
 OR
 {
@@ -1363,6 +1364,9 @@ OR
 """
 
 async def run_agent(phone: str, message: NormalizedMessage) -> str:
+    if message.type == "image":
+        return "माफ़ कीजिए किसान भाई, अभी मैं फोटो नहीं देख पाता। आप अपनी फसल की समस्या शब्दों में बता दीजिए, मैं मदद करूँगा।"
+
     # 1. Load profile
     session = await sessions_repo.get(phone)
     if not session:
@@ -1399,6 +1403,7 @@ async def run_agent(phone: str, message: NormalizedMessage) -> str:
     loop_count = 0
     max_loops = 3
     last_error_reprompted = False
+    approved_products_in_this_turn = []
 
     while loop_count < max_loops:
         profile_status_str = (
@@ -1480,6 +1485,20 @@ async def run_agent(phone: str, message: NormalizedMessage) -> str:
                     continue
 
             reply_message = data.get("message") or data.get("args", {}).get("message") or ""
+            
+            # Check for fabricated products
+            if check_for_fabricated_products(reply_message, approved_products_in_this_turn):
+                logger.warning("Fabricated product detected in agent reply, reprompting...", extra={"phone": phone, "reply": reply_message})
+                turn_messages.append(f"Agent Action: {cleaned_response}")
+                turn_messages.append(
+                    "Agent Action Error: You mentioned/invented a specific Vigour product name that was not returned by "
+                    "the find_products tool in this turn. You MUST NOT mention any specific Vigour product unless it was returned "
+                    "by find_products in this same turn. If find_products was not called or returned empty, you cannot mention "
+                    "any specific product name. Please provide your reply again without fabricating any product names."
+                )
+                loop_count += 1
+                continue
+
             # Save any profile fields if model returns them in the reply action
             up = data.get("updated_profile") or data.get("fields") or {}
             clean_up = {k: v for k, v in up.items() if v is not None}
@@ -1521,6 +1540,7 @@ async def run_agent(phone: str, message: NormalizedMessage) -> str:
                 collected["problem_summary"] = prob_arg
             
             res = await tool_find_products(crop_arg, prob_arg, phone)
+            approved_products_in_this_turn = res
             
             # Save recommended product IDs to profile
             if res:

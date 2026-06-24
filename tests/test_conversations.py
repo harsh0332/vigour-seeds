@@ -127,7 +127,7 @@ async def test_pest_problem_react():
 
     mock_responses = make_mock_complete_sequence([
         {"action": "find_products", "crop": "Soybean", "problem": "pests"},
-        {"action": "reply", "message": "सोयाबीन में कीड़े लगने पर आप Vigour Protect का छिड़काव कर सकते हैं।"}
+        {"action": "reply", "message": "सोयाबीन में कीड़े लगने पर आप हमारे *Vigour 335* बीज का उपयोग कर सकते हैं और कीटनाशक का छिड़काव करें।"}
     ])
 
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
@@ -140,7 +140,7 @@ async def test_pest_problem_react():
         )
         await conversation_router.route_message(msg)
         last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
-        assert "Vigour Protect" in last_msg
+        assert "*Vigour 335*" in last_msg
         assert "छिड़काव" in last_msg
 
 @pytest.mark.asyncio
@@ -696,10 +696,20 @@ async def test_no_reask_beej_kapatanahi():
     })
     mock_whatsapp_client.clear()
 
+    # Seed the product so find_products returns it as approved
+    in_memory_db.clear_all()
+    in_memory_db.seed_defaults()
+    in_memory_db.tables["products"].append({
+        "product_id": "PROD_M2",
+        "variety_name": "VIGOUR 60A90",
+        "crop": "Maize",
+        "approved_for_recommendation": "Y"
+    })
+
     # The mock returns find_products and then a final reply with nutrient management advice.
     mock_responses = make_mock_complete_sequence([
         {"action": "find_products", "crop": "Maize", "problem": "दाने छोटे"},
-        {"action": "reply", "message": "रामलाल जी, मक्के में दाने छोटे होने पर नाइट्रोजन, जिंक और बोरॉन का छिड़काव करें। मंजर आने पर सिंचाई ज़रूर करें। आप हमारा Vigour Maize 99 बीज आज़मा सकते हैं।"}
+        {"action": "reply", "message": "रामलाल जी, मक्के में दाने छोटे होने पर नाइट्रोजन, जिंक और बोरॉन का छिड़काव करें। मंजर आने पर सिंचाई ज़रूर करें। आप हमारा *VIGOUR 60A90* बीज आज़मा सकते हैं।"}
     ])
 
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
@@ -715,7 +725,7 @@ async def test_no_reask_beej_kapatanahi():
         
         # Verify it provides nutrient advice and seed name, and does not ask about seed name again.
         assert "नाइट्रोजन" in last_msg or "जिंक" in last_msg
-        assert "Vigour Maize 99" in last_msg
+        assert "*VIGOUR 60A90*" in last_msg
         assert "बीज" in last_msg
         assert "कौन सा" not in last_msg
 
@@ -832,12 +842,22 @@ async def test_natural_onboarding_and_no_blocking():
     })
     mock_whatsapp_client.clear()
 
+    # Seed the product so find_products returns it as approved
+    in_memory_db.clear_all()
+    in_memory_db.seed_defaults()
+    in_memory_db.tables["products"].append({
+        "product_id": "PROD_M1",
+        "variety_name": "Vigour Maize 99",
+        "crop": "Maize",
+        "approved_for_recommendation": "Y"
+    })
+
     # The mock returns find_products and then lists the product and asks for land size (1 question).
     mock_responses = make_mock_complete_sequence([
         {"action": "find_products", "crop": "Maize"},
         {
             "action": "reply", 
-            "message": "रामलाल जी, हमारे पास Vigour Maize 99 बीज है। आपकी कुल ज़मीन कितनी एकड़ है?"
+            "message": "रामलाल जी, हमारे पास *Vigour Maize 99* बीज है। आपकी कुल ज़मीन कितनी एकड़ है?"
         }
     ])
 
@@ -853,7 +873,7 @@ async def test_natural_onboarding_and_no_blocking():
         last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
         
         # Verify it lists products and does not block
-        assert "Vigour Maize 99" in last_msg
+        assert "*Vigour Maize 99*" in last_msg
         # Verify it asks at most one onboarding question
         assert "ज़मीन" in last_msg
         # Ensure it doesn't query state or water source in the same message (no interrogation)
@@ -902,12 +922,22 @@ async def test_short_reply_context_resolution():
     })
     mock_whatsapp_client.clear()
 
+    # Seed the product so find_products returns it as approved
+    in_memory_db.clear_all()
+    in_memory_db.seed_defaults()
+    in_memory_db.tables["products"].append({
+        "product_id": "PROD_M1",
+        "variety_name": "Vigour Maize 99",
+        "crop": "Maize",
+        "approved_for_recommendation": "Y"
+    })
+
     # When the user responds with "Han", the agent resolves the context:
     # 1. Runs find_products
     # 2. Responds with the product
     mock_responses = make_mock_complete_sequence([
         {"action": "find_products", "crop": "Maize"},
-        {"action": "reply", "message": "जी हाँ! हमारे पास Vigour Maize 99 बीज उपलब्ध है।"}
+        {"action": "reply", "message": "जी हाँ! हमारे पास *Vigour Maize 99* बीज उपलब्ध है।"}
     ])
 
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
@@ -922,5 +952,117 @@ async def test_short_reply_context_resolution():
         last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
         
         # Verify it showed the products
-        assert "Vigour Maize 99" in last_msg
+        assert "*Vigour Maize 99*" in last_msg
+
+@pytest.mark.asyncio
+async def test_grounded_maize_recommendation_and_bolding():
+    """
+    Asserts: The agent uses ONLY a returned variety name (bolded) and does not fabricate.
+    """
+    phone = "919000001085"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "crop": "Maize"
+        }
+    })
+    mock_whatsapp_client.clear()
+
+    # Seed product
+    in_memory_db.clear_all()
+    in_memory_db.seed_defaults()
+    in_memory_db.tables["products"].append({
+        "product_id": "PROD_M2",
+        "variety_name": "VIGOUR 60A90",
+        "crop": "Maize",
+        "approved_for_recommendation": "Y"
+    })
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Maize"},
+        {"action": "reply", "message": "मक्के के लिए हमारे पास *VIGOUR 60A90* बीज उपलब्ध है।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.maize_grounded",
+            from_phone=phone,
+            type="text",
+            text="makke ka beej bataye",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        
+        assert "*VIGOUR 60A90*" in last_msg
+        assert "Vigour Maize 99" not in last_msg
+
+@pytest.mark.asyncio
+async def test_dhaniya_no_product_honest():
+    """
+    Asserts: If find_products is empty for Coriander, the bot honestly states it
+    and doesn't fabricate a product.
+    """
+    phone = "919000001086"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "crop": "Coriander"
+        }
+    })
+    mock_whatsapp_client.clear()
+
+    # Empty list seeded
+    in_memory_db.clear_all()
+    in_memory_db.seed_defaults()
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Coriander"},
+        {"action": "reply", "message": "माफ़ कीजिए, हमारे पास अभी धनिये के लिए कोई approved Vigour बीज नहीं है। डीलर से संपर्क करें।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.dhaniya_empty",
+            from_phone=phone,
+            type="text",
+            text="dhaniya ka beej bataye",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        
+        assert "approved Vigour बीज नहीं है" in last_msg
+        assert "Vigour" in last_msg # "Vigour" as part of allowed "approved Vigour"
+        # Ensure no specific variety is fabricated
+        assert "Vigour Coriander" not in last_msg
+        assert "Vigour धनिया" not in last_msg
+
+@pytest.mark.asyncio
+async def test_image_received_short_circuit_no_analyze():
+    """
+    Asserts: If farmer sends an image, it immediately short-circuits and refuses photo analysis politely.
+    """
+    phone = "919000001087"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    # Mock the ai complete call just in case (should not be called)
+    mock_complete = AsyncMock()
+    with patch.object(mock_ai_provider, "complete", mock_complete):
+        msg = ParsedMessage(
+            wamid="wamid.image_upload",
+            from_phone=phone,
+            type="image",
+            media_id="media_12345",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        
+        assert "फोटो नहीं देख पाता" in last_msg
+        mock_complete.assert_not_called()
+
 
