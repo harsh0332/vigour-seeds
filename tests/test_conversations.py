@@ -6,12 +6,174 @@ from app.whatsapp.models import ParsedMessage
 from app.flows.router import conversation_router
 from app.db.repositories.sessions import sessions_repo
 
-def make_mock_complete(extraction_dict, phrasing_response):
+def make_mock_complete_sequence(json_responses):
+    """
+    Returns an AsyncMock that returns the given JSON responses in sequence.
+    """
+    call_idx = 0
     async def mock_call(system, user, json_mode=False):
-        if "extraction" in system or json_mode:
-            return json.dumps(extraction_dict)
-        return phrasing_response
+        nonlocal call_idx
+        if call_idx < len(json_responses):
+            res = json_responses[call_idx]
+            call_idx += 1
+            if isinstance(res, dict):
+                return json.dumps(res)
+            return res
+        return json.dumps({"action": "reply", "message": "नमस्ते!"})
     return mock_call
+
+@pytest.mark.asyncio
+async def test_obviously_off_topic_no_llm():
+    """
+    Asserts: Obvious off-topic queries return the fixed refusal message directly
+    and DO NOT call the LLM provider (complete).
+    """
+    phone = "919000001099"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    mock_complete = AsyncMock()
+    with patch.object(mock_ai_provider, "complete", mock_complete):
+        msg = ParsedMessage(
+            wamid="wamid.off_topic_test",
+            from_phone=phone,
+            type="text",
+            text="write a python function to check if a number is prime",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+
+        assert "माफ़ कीजिए किसान भाई" in last_msg
+        mock_complete.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_obviously_off_topic_joke_no_llm():
+    """
+    Asserts: Asking for a joke returns the fixed refusal message directly
+    and DO NOT call the LLM provider.
+    """
+    phone = "919000001098"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    mock_complete = AsyncMock()
+    with patch.object(mock_ai_provider, "complete", mock_complete):
+        msg = ParsedMessage(
+            wamid="wamid.joke_test",
+            from_phone=phone,
+            type="text",
+            text="ek mast chutkula sunao na",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+
+        assert "माफ़ कीजिए किसान भाई" in last_msg
+        mock_complete.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_makka_beej_direct_products():
+    """
+    Asserts: "mujhe makka ka beej chahiye" directly runs find_products and returns maize seeds
+    without looping on Kya Samasya hai or photo bhejo.
+    """
+    phone = "919000001097"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+    
+    in_memory_db.clear_all()
+    in_memory_db.seed_defaults()
+    in_memory_db.tables["products"].append({
+        "product_id": "PROD_M1",
+        "variety_name": "Vigour Maize 99",
+        "crop": "Maize",
+        "duration_days": "110",
+        "mrp_inr": 350.0,
+        "key_traits": "उच्च पैदावार, सूखा सहनशील",
+        "pest_disease_tolerance": "tolerant",
+        "pack_size": "5 kg",
+        "approved_for_recommendation": "Y",
+        "target_region": "MP"
+    })
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Maize", "problem": "-"},
+        {"action": "reply", "message": "नमस्ते! मक्का के लिए हमारे पास Vigour Maize 99 बीज उपलब्ध है।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.makka_test",
+            from_phone=phone,
+            type="text",
+            text="mujhe makka ka beej chahiye",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Vigour Maize 99" in last_msg
+        assert "क्या समस्या है" not in last_msg
+        assert "फोटो" not in last_msg
+
+@pytest.mark.asyncio
+async def test_pest_problem_react():
+    """
+    Asserts: Pest problem text triggers correct advice and product recommendations.
+    """
+    phone = "919000001096"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Soybean", "problem": "pests"},
+        {"action": "reply", "message": "सोयाबीन में कीड़े लगने पर आप Vigour Protect का छिड़काव कर सकते हैं।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.pest_test",
+            from_phone=phone,
+            type="text",
+            text="soybean me keede lag gaye hain",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Vigour Protect" in last_msg
+        assert "छिड़काव" in last_msg
+
+@pytest.mark.asyncio
+async def test_dealer_lookup_react():
+    """
+    Asserts: "dealer kaha milega" calls find_dealer action.
+    """
+    phone = "919000001095"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "state": "Madhya Pradesh",
+            "district": "Dhar"
+        }
+    })
+    mock_whatsapp_client.clear()
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_dealer"},
+        {"action": "reply", "message": "धार जिले में हमारे मुख्य डीलर: न्यू किसान ट्रेडर्स हैं।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.dealer_test",
+            from_phone=phone,
+            type="text",
+            text="dealer kaha milega btao",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "न्यू किसान ट्रेडर्स" in last_msg
 
 @pytest.mark.asyncio
 async def test_greeting_and_onboarding_welcome():
@@ -32,18 +194,11 @@ async def test_greeting_and_onboarding_welcome():
     await conversation_router.route_message(msg_reset)
     mock_whatsapp_client.clear()
     
-    # Mock LLM to return is_unclear = False for extraction
-    async def mock_complete(system, user, json_mode=False):
-        if "extraction" in system or json_mode:
-            return json.dumps({
-                "is_unclear": False,
-                "out_of_scope_topic": None,
-                "asks_chemical_dosage": False,
-                "name": None
-            })
-        return "Vigour Seeds में आपका स्वागत है! मैं आपका कृषि सहायक हूँ। आपका नाम क्या है?"
+    mock_responses = make_mock_complete_sequence([
+        {"action": "reply", "message": "Vigour Seeds में आपका स्वागत है! मैं आपका कृषि सहायक हूँ। आपका नाम क्या है?"}
+    ])
         
-    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_complete)):
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
         msg_hye = ParsedMessage(
             wamid="wamid.hye",
             from_phone=phone,
@@ -67,27 +222,20 @@ async def test_full_onboarding_flow():
     await sessions_repo.delete(phone)
     
     turns = [
-        ("Hye", {"is_unclear": False}, "नमस्ते! आपका नाम क्या है?"),
-        ("महिपाल", {"name": "महिपाल", "is_unclear": False}, "महिपाल जी, आप किस राज्य और जिला से हैं?"),
-        ("MP Dhar", {"state": "Madhya Pradesh", "village_city": "Dhar", "is_unclear": False}, "धन्यवाद। आपकी कुल जमीन (एकड़ में) कितनी है?"),
-        ("10", {"land_size": "10", "is_unclear": False}, "सिंचाई का साधन क्या है (जैसे ट्यूबवेल, कुआँ, नहर)?"),
-        ("ट्यूबवेल", {"water_source": "ट्यूबवेल", "is_unclear": False}, "आप अभी अपने खेत में कौन सी फसल उगा रहे हैं?"),
-        ("Soybean", {"crop": "Soybean", "is_unclear": False}, "आपकी Soybean फसल में अभी क्या दिक्कत आ रही है?")
+        ("Hye", [{"action": "reply", "message": "नमस्ते! आपका नाम क्या है?"}], "नमस्ते! आपका नाम क्या है?"),
+        ("महिपाल", [{"action": "save_profile", "fields": {"name": "महिपाल"}}, {"action": "reply", "message": "महिपाल जी, आप किस राज्य और जिला से हैं?"}], "महिपाल जी, आप किस राज्य और जिला से हैं?"),
+        ("MP Dhar", [{"action": "save_profile", "fields": {"state": "Madhya Pradesh", "district": "Dhar"}}, {"action": "reply", "message": "धन्यवाद। आपकी कुल जमीन (एकड़ में) कितनी है?"}], "धन्यवाद। आपकी कुल जमीन (एकड़ में) कितनी है?"),
+        ("10", [{"action": "save_profile", "fields": {"total_land": "10"}}, {"action": "reply", "message": "सिंचाई का साधन क्या है (जैसे ट्यूबवेल, कुआँ, नहर)?"}], "सिंचाई का साधन क्या है (जैसे ट्यूबवेल, कुआँ, नहर)?"),
+        ("ट्यूबवेल", [{"action": "save_profile", "fields": {"water_source": "ट्यूबवेल"}}, {"action": "reply", "message": "आप अभी अपने खेत में कौन सी फसल उगा रहे हैं?"}], "आप अभी अपने खेत में कौन सी फसल उगा रहे हैं?"),
+        ("Soybean", [{"action": "save_profile", "fields": {"crop": "Soybean"}}, {"action": "reply", "message": "आपकी Soybean फसल में अभी क्या दिक्कत आ रही है?"}], "आपकी Soybean फसल में अभी क्या दिक्कत आ रही है?")
     ]
     
-    turn_idx = 0
-    async def mock_complete(system, user, json_mode=False):
-        nonlocal turn_idx
-        if "extraction" in system or json_mode:
-            return json.dumps(turns[turn_idx][1])
-        else:
-            return turns[turn_idx][2]
-            
-    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_complete)):
-        for user_input, _, expected_reply in turns:
-            mock_whatsapp_client.clear()
+    for user_input, mock_sequence, expected_reply in turns:
+        mock_whatsapp_client.clear()
+        mock_responses = make_mock_complete_sequence(mock_sequence)
+        with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
             msg = ParsedMessage(
-                wamid=f"wamid.{turn_idx}",
+                wamid=f"wamid.onb.{user_input}",
                 from_phone=phone,
                 type="text",
                 text=user_input,
@@ -97,7 +245,6 @@ async def test_full_onboarding_flow():
             
             reply = mock_whatsapp_client.sent_messages[-1]["body"]
             assert expected_reply in reply
-            turn_idx += 1
 
 @pytest.mark.asyncio
 async def test_short_valid_answer_crop_stage():
@@ -107,8 +254,6 @@ async def test_short_valid_answer_crop_stage():
     phone = "919000001003"
     await sessions_repo.delete(phone)
     await sessions_repo.upsert(phone, {
-        "current_flow": "farmer_qualification",
-        "current_step": "STEP_ADVISOR",
         "collected_json": {
             "greeted": True,
             "name": "महिपाल",
@@ -121,10 +266,9 @@ async def test_short_valid_answer_crop_stage():
         }
     })
     
-    mock_responses = make_mock_complete(
-        {"is_unclear": True, "out_of_scope_topic": "unknown", "asks_chemical_dosage": False},
-        "सोयाबीन में आप यूरिया डाल सकते हैं।"
-    )
+    mock_responses = make_mock_complete_sequence([
+        {"action": "reply", "message": "सोयाबीन में आप यूरिया डाल सकते हैं।"}
+    ])
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
         msg = ParsedMessage(
             wamid="wamid.test_40",
@@ -136,7 +280,7 @@ async def test_short_valid_answer_crop_stage():
         await conversation_router.route_message(msg)
         last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
         assert "मुझे समझ नहीं आया" not in last_msg
-        assert "माफ़" not in last_msg
+        assert "सोयाबीन" in last_msg
 
 @pytest.mark.asyncio
 async def test_classifier_fertilizer_guidance():
@@ -146,8 +290,6 @@ async def test_classifier_fertilizer_guidance():
     phone = "919000001004"
     await sessions_repo.delete(phone)
     await sessions_repo.upsert(phone, {
-        "current_flow": "farmer_qualification",
-        "current_step": "STEP_ADVISOR",
         "collected_json": {
             "greeted": True,
             "name": "महिपाल",
@@ -159,10 +301,9 @@ async def test_classifier_fertilizer_guidance():
             "problem_summary": "खाद प्रबंधन"
         }
     })
-    mock_responses = make_mock_complete(
-        {"is_unclear": False, "out_of_scope_topic": None, "asks_chemical_dosage": False},
-        "सोयाबीन में आप बुवाई के समय DAP और यूरिया का उपयोग कर सकते हैं।"
-    )
+    mock_responses = make_mock_complete_sequence([
+        {"action": "reply", "message": "सोयाबीन में आप बुवाई के समय DAP और यूरिया का उपयोग कर सकते हैं।"}
+    ])
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
         msg = ParsedMessage(
             wamid="wamid.test_khad",
@@ -184,8 +325,6 @@ async def test_classifier_medicine_guidance():
     phone = "919000001005"
     await sessions_repo.delete(phone)
     await sessions_repo.upsert(phone, {
-        "current_flow": "farmer_qualification",
-        "current_step": "STEP_ADVISOR",
         "collected_json": {
             "greeted": True,
             "name": "महिपाल",
@@ -197,10 +336,9 @@ async def test_classifier_medicine_guidance():
             "problem_summary": "रोग नियंत्रण"
         }
     })
-    mock_responses = make_mock_complete(
-        {"is_unclear": False, "out_of_scope_topic": None, "asks_chemical_dosage": False},
-        "सोयाबीन में पीला मोज़ेक वायरस के लिए सही दवा और मात्रा के लिए नज़दीकी डीलर/कृषि अधिकारी से पुष्टि करें।"
-    )
+    mock_responses = make_mock_complete_sequence([
+        {"action": "reply", "message": "सोयाबीन में पीला मोज़ेक वायरस के लिए सही दवा और मात्रा के लिए नज़दीकी डीलर/कृषि अधिकारी से पुष्टि करें।"}
+    ])
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
         msg = ParsedMessage(
             wamid="wamid.test_dawai",
@@ -222,8 +360,6 @@ async def test_classifier_soybean_seeds():
     phone = "919000001006"
     await sessions_repo.delete(phone)
     await sessions_repo.upsert(phone, {
-        "current_flow": "farmer_qualification",
-        "current_step": "STEP_ADVISOR",
         "collected_json": {
             "greeted": True,
             "name": "महिपाल",
@@ -234,10 +370,10 @@ async def test_classifier_soybean_seeds():
             "crop": "Soybean"
         }
     })
-    mock_responses = make_mock_complete(
-        {"is_unclear": False, "out_of_scope_topic": None, "asks_chemical_dosage": False},
-        "नमस्ते! हमारी सोयाबीन की प्रमुख किस्में: Vigour 335 और Vigour 9560 हैं।"
-    )
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Soybean", "problem": "-"},
+        {"action": "reply", "message": "नमस्ते! हमारी सोयाबीन की प्रमुख किस्में: Vigour 335 और Vigour 9560 हैं।"}
+    ])
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
         msg = ParsedMessage(
             wamid="wamid.test_soybean_kism",
@@ -258,8 +394,6 @@ async def test_classifier_help_jankari():
     phone = "919000001007"
     await sessions_repo.delete(phone)
     await sessions_repo.upsert(phone, {
-        "current_flow": "farmer_qualification",
-        "current_step": "STEP_ADVISOR",
         "collected_json": {
             "greeted": True,
             "name": "महिपाल",
@@ -270,10 +404,9 @@ async def test_classifier_help_jankari():
             "crop": "Soybean"
         }
     })
-    mock_responses = make_mock_complete(
-        {"is_unclear": True, "out_of_scope_topic": "unknown", "asks_chemical_dosage": False},
-        "मैं आपकी फसल प्रबंधन में मदद कर सकता हूँ।"
-    )
+    mock_responses = make_mock_complete_sequence([
+        {"action": "reply", "message": "मैं आपकी फसल प्रबंधन में मदद कर सकता हूँ।"}
+    ])
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
         msg = ParsedMessage(
             wamid="wamid.test_help",
@@ -294,8 +427,6 @@ async def test_classifier_pm_kisan_out_of_scope():
     phone = "919000001008"
     await sessions_repo.delete(phone)
     await sessions_repo.upsert(phone, {
-        "current_flow": "farmer_qualification",
-        "current_step": "STEP_ADVISOR",
         "collected_json": {
             "greeted": True,
             "name": "महिपाल",
@@ -306,10 +437,9 @@ async def test_classifier_pm_kisan_out_of_scope():
             "crop": "Soybean"
         }
     })
-    mock_responses = make_mock_complete(
-        {"is_unclear": False, "out_of_scope_topic": "PM-Kisan", "asks_chemical_dosage": False},
-        "माफ़ कीजिएगा, मैं सरकारी योजनाओं की जानकारी नहीं दे सकता।"
-    )
+    mock_responses = make_mock_complete_sequence([
+        {"action": "reply", "message": "माफ़ कीजिएगा, मैं सरकारी योजनाओं की जानकारी नहीं दे सकता।"}
+    ])
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
         msg = ParsedMessage(
             wamid="wamid.test_pm_kisan",
@@ -345,8 +475,6 @@ async def test_product_soybean_only():
     phone = "919000001009"
     await sessions_repo.delete(phone)
     await sessions_repo.upsert(phone, {
-        "current_flow": "farmer_qualification",
-        "current_step": "STEP_ADVISOR",
         "collected_json": {
             "greeted": True,
             "name": "महिपाल",
@@ -358,18 +486,24 @@ async def test_product_soybean_only():
         }
     })
     
-    msg = ParsedMessage(
-        wamid="wamid.test_soybean_products",
-        from_phone=phone,
-        type="text",
-        text="saare product batao",
-        timestamp="1718563800"
-    )
-    await conversation_router.route_message(msg)
-    last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Soybean", "problem": "-"},
+        {"action": "reply", "message": "यहाँ सोयाबीन किस्में हैं: Vigour 335 और Vigour 9560।"}
+    ])
     
-    assert "Vigour 335" in last_msg or "Vigour 9560" in last_msg
-    assert "Vigour 087" not in last_msg
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.test_soybean_products",
+            from_phone=phone,
+            type="text",
+            text="saare product batao",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        
+        assert "Vigour 335" in last_msg or "Vigour 9560" in last_msg
+        assert "Vigour 087" not in last_msg
 
 @pytest.mark.asyncio
 async def test_product_crop_switch():
@@ -394,8 +528,6 @@ async def test_product_crop_switch():
     phone = "919000001010"
     await sessions_repo.delete(phone)
     await sessions_repo.upsert(phone, {
-        "current_flow": "farmer_qualification",
-        "current_step": "STEP_ADVISOR",
         "collected_json": {
             "greeted": True,
             "name": "महिपाल",
@@ -409,10 +541,10 @@ async def test_product_crop_switch():
         }
     })
     
-    mock_responses = make_mock_complete(
-        {"crop": "Soybean", "is_unclear": False, "out_of_scope_topic": None, "asks_chemical_dosage": False},
-        "नमस्ते"
-    )
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Soybean", "problem": "-"},
+        {"action": "reply", "message": "यहाँ सोयाबीन किस्में हैं: Vigour 335 और Vigour 9560।"}
+    ])
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
         msg = ParsedMessage(
             wamid="wamid.test_crop_switch",
@@ -435,8 +567,6 @@ async def test_product_zero_approved():
     phone = "919000001011"
     await sessions_repo.delete(phone)
     await sessions_repo.upsert(phone, {
-        "current_flow": "farmer_qualification",
-        "current_step": "STEP_ADVISOR",
         "collected_json": {
             "greeted": True,
             "name": "महिपाल",
@@ -447,17 +577,23 @@ async def test_product_zero_approved():
             "crop": "Dhaniya"
         }
     })
-    msg = ParsedMessage(
-        wamid="wamid.test_zero_approved",
-        from_phone=phone,
-        type="text",
-        text="saare product बताओ",
-        timestamp="1718563800"
-    )
-    await conversation_router.route_message(msg)
-    last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
-    assert "कोई अनुमोदित Vigour" in last_msg
-    assert "संपर्क" in last_msg
+    
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Dhaniya", "problem": "-"},
+        {"action": "reply", "message": "कोई अनुमोदित Vigour उत्पाद उपलब्ध नहीं है। संपर्क: 9999999999"}
+    ])
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.test_zero_approved",
+            from_phone=phone,
+            type="text",
+            text="saare product बताओ",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "कोई अनुमोदित Vigour" in last_msg
+        assert "संपर्क" in last_msg
 
 @pytest.mark.asyncio
 async def test_no_repeated_replies():
@@ -467,8 +603,6 @@ async def test_no_repeated_replies():
     phone = "919000001012"
     await sessions_repo.delete(phone)
     await sessions_repo.upsert(phone, {
-        "current_flow": "farmer_qualification",
-        "current_step": "STEP_ADVISOR",
         "collected_json": {
             "greeted": True,
             "name": "महिपाल",
@@ -482,18 +616,13 @@ async def test_no_repeated_replies():
         }
     })
     
-    extraction = {"is_unclear": False, "out_of_scope_topic": None, "asks_chemical_dosage": False}
-    
-    async def mock_complete(system, user, json_mode=False):
-        if "extraction" in system or json_mode:
-            return json.dumps(extraction)
-        elif "rephrase" in system.lower() or "rephrase" in user.lower():
-            if "बहुत बढ़िया भाई" in system or "बहुत बढ़िया भाई" in user:
-                return "ठीक है महिपाल जी!"
-            return "जी बिल्कुल!"
-        return "बहुत बढ़िया भाई!"
+    mock_responses = make_mock_complete_sequence([
+        {"action": "reply", "message": "बहुत बढ़िया भाई!"},
+        {"action": "reply", "message": "जी बिल्कुल!"},
+        {"action": "reply", "message": "ठीक है महिपाल जी!"}
+    ])
         
-    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_complete)):
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
         replies = []
         for user_text in ["ok", "thanks", "aur kya help"]:
             msg = ParsedMessage(
@@ -518,8 +647,6 @@ async def test_no_broken_placeholder_text():
     phone = "919000001013"
     await sessions_repo.delete(phone)
     await sessions_repo.upsert(phone, {
-        "current_flow": "farmer_qualification",
-        "current_step": "STEP_ADVISOR",
         "collected_json": {
             "greeted": True,
             "name": "महिपाल",
@@ -533,10 +660,9 @@ async def test_no_broken_placeholder_text():
         }
     })
     
-    mock_responses = make_mock_complete(
-        {"is_unclear": False, "out_of_scope_topic": None, "asks_chemical_dosage": False},
-        "हम आपको सोयाबीन के लिए सही सलाह देंगे।"
-    )
+    mock_responses = make_mock_complete_sequence([
+        {"action": "reply", "message": "हम आपको सोयाबीन के लिए सही सलाह देंगे।"}
+    ])
     
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
         msg = ParsedMessage(

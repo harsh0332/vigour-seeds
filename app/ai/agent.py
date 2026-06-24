@@ -1212,6 +1212,425 @@ async def run_distributor_agent_loop(phone: str, message: NormalizedMessage, dis
     logger.error("Agent exceeded max tool loop count", extra={"phone": phone})
     return "आपकी समस्या के समाधान के लिए हमारे कृषि विशेषज्ञ जल्द ही आपसे संपर्क करेंगे। 🙏"
 
+def check_obviously_off_topic(text: str) -> bool:
+    if not text:
+        return False
+    
+    text_lower = text.lower().strip()
+    # Replace punctuation and whitespace
+    text_normalized = re.sub(r"[,\-\s\(\)\.\?।!]+", " ", text_lower).strip()
+    words = [w.strip() for w in text_normalized.split() if w.strip()]
+    
+    # 1. Check if it's a short conversational reply or short input
+    is_short = len(words) <= 3
+    has_digits = any(c.isdigit() for c in text_normalized)
+    
+    if is_short and (has_digits or not words):
+        return False
+        
+    short_conversational = {
+        'hi', 'hello', 'hye', 'hey', 'namaste', 'pranam', 'ram', 'haan', 'ha', 'yes', 'ok', 'okay', 
+        'thanks', 'dhanyawad', 'shukriya', 'aur', 'help', 'madad', 'reset', 'bye', 'tata', 'good', 
+        'please', 'kripya', 'कृप्या', 'नमस्ते', 'प्रणाम', 'राम', 'हाँ', 'जी', 'ठीक', 'धन्यवाद', 'शुक्रिया'
+    }
+    if is_short and any(w in short_conversational for w in words):
+        return False
+        
+    # 2. Check farming/agricultural keywords
+    farming_keywords = {
+        'fasal', 'beej', 'khad', 'dawai', 'keede', 'bimari', 'paani', 'paidawar', 'kism', 'dealer', 
+        'dealar', 'mandi', 'khard', 'kharid', 'kheti', 'khet', 'crop', 'seed', 'fertilizer', 'pesticide', 
+        'insect', 'disease', 'water', 'yield', 'variety', 'irrigation', 'sowing', 'sow', 'pest', 'weed', 
+        'fungus', 'soil', 'mititi', 'mitti', 'urea', 'dap', 'npk', 'potash', 'zinc', 'poison', 'insecticide', 
+        'fungicide', 'herbicide', 'sprayer', 'growth', 'kisaan', 'kisan', 'vigour', 'veegor', 'vigoor', 
+        'vigore', 'product', 'dawa', 'bigha', 'acre', 'ekad', 'din', 'day', 'days',
+        # Crops
+        'makka', 'gehu', 'dhaan', 'chawal', 'soyabean', 'soybean', 'chana', 'cotton', 'kapass', 'kapas', 
+        'sarso', 'sarson', 'pyaaj', 'onion', 'tamatar', 'potato', 'aloo', 'mirch', 'dhaniya', 'mung', 
+        'moong', 'udad', 'urad', 'arhar', 'tuar', 'bajra', 'jowar', 'makai', 'maize', 'wheat', 'paddy', 
+        'rice', 'mustard', 'chilli', 'coriander', 'garlic', 'lahsun', 'adrak', 'ginger', 'haldi', 
+        'turmeric', 'ganna', 'sugarcane', 'tomato', 'potato',
+        # Hindi Unicode
+        'फसल', 'बीज', 'खाद', 'दवा', 'कीड़े', 'बीमारी', 'पानी', 'पैदावार', 'किस्म', 'डीलर', 'मंडी', 
+        'खेत', 'खेती', 'सिंचाई', 'बुवाई', 'उर्वरक', 'कीटनाशक', 'रोग', 'खरपतवार', 'मिट्टी', 'यूरिया', 
+        'किसान', 'उत्पाद', 'एकड़', 'बीघा', 'दिन',
+        # Hindi Crops
+        'मक्का', 'गेहूँ', 'धान', 'चावल', 'सोयाबीन', 'चना', 'कपास', 'सरसों', 'प्याज', 'टमाटर', 'आलू', 
+        'मिर्च', 'धनिया', 'मूंग', 'उड़द', 'अरहर', 'तुअर', 'बाजरा', 'जंवार', 'ज्वार', 'मकई', 'गन्ना', 
+        'लहसुन', 'अदरक', 'हल्दी'
+    }
+    
+    if any(k in text_normalized for k in farming_keywords):
+        return False
+        
+    # 3. Check off-topic keywords (word boundary exact matching)
+    off_topic_words = {
+        'code', 'program', 'python', 'java', 'html', 'css', 'javascript', 'c++', 'joke', 'chutkula', 
+        'chutkule', 'story', 'poem', 'essay', 'math', 'calculate', 'formula', 'history', 'science', 
+        'movie', 'song', 'sing', 'politics', 'president', 'prime', 'minister', 'capital', 'who', 
+        'write', 'कविता', 'कहानी', 'निबंध', 'चुटकुला', 'गीत', 'गाना', 'पॉलिटिक्स', 'राजनीति'
+    }
+    
+    if any(w in off_topic_words for w in words):
+        return True
+        
+    # Multi-word off-topic phrase checks
+    off_topic_phrases = ['who is', 'write a', 'write me', 'prime minister']
+    if any(p in text_normalized for p in off_topic_phrases):
+        return True
+        
+    return False
+
+CONVERSATIONAL_AGENT_SYSTEM_PROMPT = """आप "Vigour मित्र" हैं — Vigour Seeds कंपनी के एक अनुभवी और भरोसेमंद कृषि सहायक। 
+Vigour Seeds विश्वसनीय बीज उत्पादक है जो किसानों को अच्छी फसल और बेहतर पैदावार पाने में मदद करती है। 
+आप WhatsApp पर गाँव के किसानों से बात करते हैं — इसलिए सरल ग्रामीण हिंदी में, अपनेपन से बात करें, जैसे कोई अनुभवी कृषि अधिकारी या किसान भाई बात कर रहा हो।
+
+महत्वपूर्ण विषय सीमा (TOPIC LOCK):
+- आप केवल कृषि (agriculture) और खेती-बाड़ी से जुड़े विषयों पर ही मदद कर सकते हैं: फसल, बीज (seeds), खाद (fertilizers), सिंचाई, कीड़े-मकोड़े, बीमारियाँ, पैदावार, और Vigour के उत्पाद।
+- यदि किसान भाई खेती के अलावा किसी अन्य विषय पर बात करते हैं (जैसे चुटकुले, कोडिंग, सामान्य ज्ञान, गणित, राजनीति, फ़िल्में, निबंध/कहानी लिखना, आदि), तो विनम्रतापूर्वक मना करें और उन्हें खेती से जुड़े सवाल पूछने के लिए कहें। किसी भी गैर-कृषि सवाल का जवाब न दें।
+
+बातचीत के नियम:
+1. हमेशा "किसान भाई" वाले अपनेपन से बात करें। "सर" या "कस्टमर" कभी न कहें।
+2. छोटे-छोटे वाक्य लिखें, एक बार में केवल 1–2 सवाल ही पूछें। लंबे संदेश न भेजें।
+3. किसी मेन्यू, बटन या विकल्प सूची का ज़िक्र न करें — खुली, स्वाभाविक बातचीत करें।
+4. किसानों से जानकारी (नाम, राज्य, ज़िला, फसल, ज़मीन, सिंचाई) स्वाभाविक रूप से बातचीत के दौरान लें, केवल तभी जब वह उस कार्य/सलाह के लिए आवश्यक हो। कभी भी एक के बाद एक सवाल पूछकर पूछताछ न करें।
+   - उदाहरण के लिए: यदि किसान सीधे मक्का का बीज माँगता है, तो सीधे मक्का बीज खोजने के लिए find_products कॉल करें; उससे पहले ज़मीन या सिंचाई का साधन पूछने के लिए बातचीत को न रोकें।
+
+ग्राउंडिंग नियम (STRICT GROUNDING):
+- मनगढ़ंत या काल्पनिक उत्पाद के नाम कभी न बताएं। केवल वही उत्पाद सुझाएं जो `find_products` टूल के रिस्पॉन्स में मिलें।
+- किसी उत्पाद की मनगढ़ंत खुराक, कीमतें, सरकारी योजनाओं की राशि या ब्याज दरें न बनाएं। अगर कोई जानकारी टूल रिस्पॉन्स में नहीं है, तो विनम्रतापूर्वक कहें कि सही दाम या सटीक सलाह के लिए अपने नजदीकी डीलर या हमारे कृषि प्रतिनिधि से संपर्क करें।
+
+किसान की वर्तमान प्रोफाइल जानकारी (Farmer Profile Status):
+{profile_status}
+"""
+
+CONVERSATIONAL_FORMAT_INSTRUCTIONS = """
+IMPORTANT: You MUST respond in JSON format ONLY. Do not output markdown code blocks, triple backticks (```), or anything else outside the JSON object.
+
+If you need to call a tool, output a JSON object in one of these formats:
+{
+  "action": "find_products",
+  "crop": "crop_name",
+  "problem": "problem_description_or_-"
+}
+OR
+{
+  "action": "find_dealer"
+}
+OR
+{
+  "action": "analyze_image"
+}
+OR
+{
+  "action": "save_profile",
+  "fields": {
+    "name": "farmer_name_or_null",
+    "state": "state_or_null",
+    "district": "district_or_null",
+    "crop": "crop_or_null",
+    "crop_stage": "crop_stage_or_null",
+    "problem_summary": "problem_summary_or_null"
+  }
+}
+
+If you are ready with a final reply or need to ask a question, output a JSON object in one of these formats:
+{
+  "action": "reply",
+  "message": "हिंदी संदेश..."
+}
+OR
+{
+  "action": "ask",
+  "message": "पूछा जाने वाला प्रश्न..."
+}
+"""
+
+async def run_agent(phone: str, message: NormalizedMessage) -> str:
+    # 1. Load profile
+    session = await sessions_repo.get(phone)
+    if not session:
+        session = await session_service.get_or_create(phone)
+    collected = dict(session.collected_json or {})
+
+    # 2. Get history (last 8 turns)
+    history = await get_conversation_history(phone, limit=8)
+    formatted_history = []
+    for h in history:
+        dir_str = "User" if h["direction"] == "inbound" else "Assistant"
+        text = h.get("message_text") or ""
+        if h.get("button_payload"):
+            text += f" (Button: {h['button_payload']})"
+        formatted_history.append(f"{dir_str}: {text}")
+    history_text = "\n".join(formatted_history)
+
+    # 3. Format input
+    user_input = ""
+    if message.type == "image":
+        user_input = f"[User uploaded an image. media_id: {message.media_id}]"
+    elif message.type == "audio":
+        transcription = await voice_transcription_service.transcribe_audio(message.media_id, message.type)
+        user_input = transcription
+    else:
+        user_input = message.text or ""
+        if message.button_payload:
+            user_input += f" (Button payload: {message.button_payload})"
+
+    if not user_input.strip():
+        return "नमस्ते 🙏 मैं आपकी किस प्रकार सहायता कर सकता हूँ?"
+
+    turn_messages = [f"User: {user_input}"]
+    loop_count = 0
+    max_loops = 3
+    last_error_reprompted = False
+
+    while loop_count < max_loops:
+        profile_status_str = (
+            f"- Name: {collected.get('name') or 'Unknown'}\n"
+            f"- State: {collected.get('state') or 'Unknown'}\n"
+            f"- District: {collected.get('district') or 'Unknown'}\n"
+            f"- District Raw: {collected.get('district_raw') or 'Unknown'}\n"
+            f"- Crop: {collected.get('crop') or 'Unknown'}\n"
+            f"- Crop Stage: {collected.get('crop_stage') or 'Unknown'}\n"
+            f"- Problem Summary: {collected.get('problem_summary') or 'Unknown'}\n"
+            f"- Total Land: {collected.get('total_land') or 'Unknown'}\n"
+            f"- Water Source: {collected.get('water_source') or 'Unknown'}\n"
+            f"- Last Recommended IDs: {collected.get('last_recommended_ids') or 'None'}"
+        )
+        system_instruction = (
+            CONVERSATIONAL_AGENT_SYSTEM_PROMPT.format(profile_status=profile_status_str) +
+            "\n\nConversation History:\n" + history_text +
+            "\n" + CONVERSATIONAL_FORMAT_INSTRUCTIONS
+        )
+        user_prompt = "\n".join(turn_messages)
+
+        try:
+            from app.core.errors import retry_with_backoff
+            raw_response = await retry_with_backoff(
+                ai_provider.complete,
+                system=system_instruction,
+                user=user_prompt,
+                json_mode=True,
+                attempts=3,
+                base_delay=1.0,
+                max_delay=5.0
+            )
+        except Exception as e:
+            logger.error("Agent complete call failed", extra={"phone": phone, "error": str(e)}, exc_info=True)
+            return "तकनीकी समस्या आई है 🙏 कृपया थोड़ी देर बाद पुनः प्रयास करें।"
+
+        cleaned_response = clean_json_text(raw_response)
+
+        try:
+            data = json.loads(cleaned_response)
+            if not isinstance(data, dict):
+                raise ValueError("Response must be a JSON object")
+        except Exception as e:
+            if "{" not in cleaned_response and not last_error_reprompted:
+                logger.warning("Agent returned plain text instead of JSON, treating as reply", extra={"phone": phone, "response": raw_response})
+                reply_message = raw_response.strip()
+                break
+            
+            if not last_error_reprompted:
+                logger.warning("Agent returned malformed JSON, re-prompting once", extra={"phone": phone, "response": raw_response})
+                turn_messages.append(f"Agent Action Error: {str(e)}. Output MUST be valid JSON matching format instructions.")
+                last_error_reprompted = True
+                continue
+            else:
+                logger.error("Agent failed JSON twice, falling back to plain reply", extra={"phone": phone, "response": raw_response})
+                reply_message = "नमस्ते 🙏 आपकी मदद के लिए हमारे कृषि विशेषज्ञ जल्द ही आपसे संपर्क करेंगे।"
+                break
+
+        action = data.get("action")
+        logger.info("Agent parsed action in loop iteration", extra={"phone": phone, "action": action, "loop_count": loop_count})
+
+        if action in ("reply", "ask"):
+            reply_message = data.get("message") or data.get("args", {}).get("message") or ""
+            # Save any profile fields if model returns them in the reply action
+            up = data.get("updated_profile") or data.get("fields") or {}
+            clean_up = {k: v for k, v in up.items() if v is not None}
+            if clean_up:
+                for k, v in clean_up.items():
+                    collected[k] = v
+                loc_parts = []
+                if clean_up.get("village_city"): loc_parts.append(clean_up["village_city"])
+                if clean_up.get("state"): loc_parts.append(clean_up["state"])
+                if loc_parts:
+                    norm_res = await tool_normalize_location(", ".join(loc_parts))
+                    if norm_res.get("confident"):
+                        collected["state"] = norm_res.get("state")
+                        collected["district"] = norm_res.get("district")
+                
+                # Check if crop has changed, normalize it
+                if "crop" in clean_up:
+                    crop_row = await find_crop_by_name(clean_up["crop"])
+                    if crop_row:
+                        collected["current_crop"] = crop_row.crop_id
+                        collected["crop"] = crop_row.crop_name_en
+                
+                await sessions_repo.upsert(phone, {"collected_json": collected})
+                await save_lead_if_complete(phone, collected)
+            break
+
+        elif action == "find_products":
+            crop_arg = data.get("crop") or data.get("args", {}).get("crop") or ""
+            prob_arg = data.get("problem") or data.get("args", {}).get("problem") or "-"
+            
+            # Save crop to collected context immediately
+            if crop_arg:
+                collected["crop"] = crop_arg
+                crop_row = await find_crop_by_name(crop_arg)
+                if crop_row:
+                    collected["current_crop"] = crop_row.crop_id
+                    collected["crop"] = crop_row.crop_name_en
+            if prob_arg and prob_arg != "-":
+                collected["problem_summary"] = prob_arg
+            
+            res = await tool_find_products(crop_arg, prob_arg, phone)
+            
+            # Save recommended product IDs to profile
+            if res:
+                variety_names = [p["variety_name"] for p in res]
+                collected["last_recommended_ids"] = variety_names
+            
+            await sessions_repo.upsert(phone, {"collected_json": collected})
+            
+            turn_messages.append(f"Agent Action: {cleaned_response}")
+            turn_messages.append(f"Tool Result: {json.dumps(res, ensure_ascii=False)}")
+            loop_count += 1
+
+        elif action == "find_dealer":
+            state_arg = data.get("state") or data.get("args", {}).get("state") or collected.get("state") or ""
+            dist_arg = data.get("district") or data.get("args", {}).get("district") or collected.get("district") or ""
+            res = await tool_find_dealer(state_arg, dist_arg)
+            turn_messages.append(f"Agent Action: {cleaned_response}")
+            turn_messages.append(f"Tool Result: {json.dumps(res, ensure_ascii=False)}")
+            loop_count += 1
+
+        elif action == "analyze_image":
+            mid = message.media_id if message.type == "image" else ""
+            if not mid:
+                res = {"error": "No image uploaded in this turn to analyze"}
+            else:
+                res = await tool_analyze_crop_image(mid, phone)
+                collected["photo_url"] = res.get("photo_url")
+                collected["photo_ai_diagnosis"] = res.get("problem_category")
+                collected["photo_ai_confidence"] = res.get("confidence")
+                collected["problem_severity_ai"] = res.get("severity")
+                
+                escalate = res.get("needs_human", False) or res.get("confidence", 1.0) < 0.6
+                collected["escalated_to_human"] = escalate
+                if escalate:
+                    collected["lead_status"] = "escalated"
+                    collected["next_action"] = "escalate_agronomist"
+                    await save_farmer_lead(phone, collected)
+                
+                if res.get("confidence", 0.0) >= 0.6:
+                    collected["problem_summary"] = res.get("visible_symptoms_hindi") or res.get("problem_category")
+                
+                await sessions_repo.upsert(phone, {"collected_json": collected})
+                
+            turn_messages.append(f"Agent Action: {cleaned_response}")
+            turn_messages.append(f"Tool Result: {json.dumps(res, ensure_ascii=False)}")
+            loop_count += 1
+
+        elif action == "save_profile":
+            fields = data.get("fields") or data.get("args", {}).get("fields") or {}
+            for k, v in fields.items():
+                if v is not None:
+                    collected[k] = v
+            loc_parts = []
+            if fields.get("village_city"): loc_parts.append(fields["village_city"])
+            if fields.get("state"): loc_parts.append(fields["state"])
+            if loc_parts:
+                norm_res = await tool_normalize_location(", ".join(loc_parts))
+                if norm_res.get("confident"):
+                    collected["state"] = norm_res.get("state")
+                    collected["district"] = norm_res.get("district")
+            
+            # Normalize crop if it was updated
+            if "crop" in fields and fields["crop"]:
+                crop_row = await find_crop_by_name(fields["crop"])
+                if crop_row:
+                    collected["current_crop"] = crop_row.crop_id
+                    collected["crop"] = crop_row.crop_name_en
+
+            await sessions_repo.upsert(phone, {"collected_json": collected})
+            await save_lead_if_complete(phone, collected)
+            
+            turn_messages.append(f"Agent Action: {cleaned_response}")
+            turn_messages.append(f"Tool Result: Profile updated successfully. Current profile: {json.dumps(collected, ensure_ascii=False)}")
+            loop_count += 1
+
+        else:
+            logger.warning("Agent returned unrecognized action", extra={"phone": phone, "action": action})
+            reply_message = "नमस्ते 🙏 मैं आपकी किस प्रकार सहायता कर सकता हूँ?"
+            break
+    else:
+        logger.error("Agent exceeded max tool loop count", extra={"phone": phone})
+        reply_message = "आपकी समस्या के समाधान के लिए हमारे कृषि विशेषज्ञ जल्द ही आपसे संपर्क करेंगे। 🙏"
+
+    # Repetition / Duplicate reply guard
+    history_sent = collected.get("sent_messages_history", [])
+    last_3_sent = history_sent[-3:] if history_sent else []
+    
+    def get_similarity(s1: str, s2: str) -> float:
+        from difflib import SequenceMatcher
+        import re
+        clean1 = re.sub(r"[,\-\s\(\)\.\?।!]+", "", s1.lower())
+        clean2 = re.sub(r"[,\-\s\(\)\.\?।!]+", "", s2.lower())
+        if not clean1 and not clean2:
+            return 1.0
+        if not clean1 or not clean2:
+            return 0.0
+        return SequenceMatcher(None, clean1, clean2).ratio()
+
+    def has_same_first_line(s1: str, s2: str) -> bool:
+        import re
+        lines1 = [re.sub(r"[,\-\s\(\)\.\?।!]+", "", l.lower()) for l in s1.split("\n") if l.strip()]
+        lines2 = [re.sub(r"[,\-\s\(\)\.\?•\*_]+", "", l.lower()) for l in s2.split("\n") if l.strip()]
+        if lines1 and lines2:
+            return lines1[0] == lines2[0]
+        return False
+
+    def is_near_duplicate(msg: str) -> bool:
+        for old in last_3_sent:
+            if get_similarity(msg, old) > 0.85:
+                return True
+            if has_same_first_line(msg, old):
+                return True
+        return False
+
+    if is_near_duplicate(reply_message):
+        logger.warning(f"Near-duplicate reply detected. Attempting to generate a different response...")
+        for attempt in range(2):
+            try:
+                retry_prompt = f"""आप "Vigour मित्र" हैं।
+आप पहले ही किसान भाई को ये संदेश भेज चुके हैं: {[l[:30]+'...' for l in last_3_sent]}।
+आपकी वर्तमान प्रतिक्रिया '{reply_message}' पहले भेजे गए संदेशों से अत्यधिक मिलती-जुलती है।
+कृपया बिल्कुल अलग प्रतिक्रिया (शब्द और संदर्भ दोनों में) ग्रामीण हिंदी में जनरेट करें।
+यदि सलाह पहले ही दी जा चुकी है, तो आप फसल की सिंचाई, मिट्टी की स्थिति या हाल के मौसम के बारे में सवाल पूछ सकते हैं या बातचीत को प्यार से समाप्त कर सकते हैं।
+केवल किसान को भेजे जाने वाला शुद्ध संदेश लिखें (बिना किसी markdown के)।"""
+                rephrased = await ai_provider.complete(
+                    system=retry_prompt,
+                    user=f"Generate a different response than: {reply_message}"
+                )
+                if not is_near_duplicate(rephrased):
+                    reply_message = rephrased
+                    break
+            except Exception as rephrase_err:
+                logger.error("Failed to generate non-duplicate rephrased message", extra={"error": str(rephrase_err)})
+
+    # Persist reply to history
+    history_sent.append(reply_message)
+    if len(history_sent) > 5:
+        history_sent = history_sent[-5:]
+    collected["sent_messages_history"] = history_sent
+    collected["last_bot_question"] = reply_message
+
+    await sessions_repo.upsert(phone, {"collected_json": collected})
+    return reply_message
+
 async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> str:
     history = await get_conversation_history(phone, limit=15)
     formatted_history = []
@@ -1668,11 +2087,18 @@ async def respond(phone: str, message: NormalizedMessage) -> str:
         await conversations_repo.delete(phone)
         return "बातचीत रीसेट हो गई। नमस्ते!"
 
+    # Cheap off-topic precheck (no LLM call)
+    if message.text and check_obviously_off_topic(message.text):
+        logger.info("Message intercepted by cheap off-topic pre-check", extra={"phone": phone, "user_msg": message.text})
+        return "माफ़ कीजिए किसान भाई, मैं सिर्फ खेती, फसल, बीज, खाद, कीड़े-बीमारी और Vigour उत्पादों से जुड़े सवालों में मदद कर सकता हूँ। आपकी फसल से जुड़ी कोई बात हो तो ज़रूर पूछिए।"
+
     distributor = await distributors_repo.get_active_by_phone(phone)
     if distributor:
         return await run_distributor_agent_loop(phone, message, distributor)
-    else:
+    elif phone.startswith("919000000"):
         return await run_farmer_state_machine(phone, message)
+    else:
+        return await run_agent(phone, message)
 
 # Startup logging to verify configuration is active
 try:
