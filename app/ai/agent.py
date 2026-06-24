@@ -269,7 +269,8 @@ def check_for_fabricated_products(reply_text: str, approved_products: list) -> b
         "vigour seeds", "vigour seed", "vigour मित्र", "vigour मित्रा", 
         "vigour सीड", "vigour सीड्स", "vigour co", "vigour company",
         "vigour उत्पाद", "vigour बीज", "vigour बीजों", "vigour product",
-        "vigour products", "vigour variety", "vigour varieties", "approved vigour"
+        "vigour products", "vigour variety", "vigour varieties", "approved vigour",
+        "vigour सिर्फ", "vigour केवल", "vigour दवा", "vigour की दवा", "vigour कोई दवा", "vigour की कोई दवा"
     ]
     
     # Find all occurrences of the word "vigour"

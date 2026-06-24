@@ -1082,7 +1082,7 @@ async def test_vigour_seeds_only_identity():
         captured_system_instructions.append(system)
         return json.dumps({
             "action": "reply",
-            "message": "किसान भाई, Vigour Seeds सिर्फ अच्छे बीज बनाती है, दवा नहीं। दवा/कीटनाशक के लिए आप अपने नज़दीकी कृषि डीलर से सही उत्पाद और मात्रा पूछ सकते हैं।"
+            "message": "किसान भाई, Vigour सिर्फ अच्छे बीज बनाती है, दवा नहीं। दवा/कीटनाशक के लिए आप अपने नज़दीकी कृषि डीलर से सही उत्पाद और मात्रा पूछ सकते हैं।"
         })
 
     with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_complete)):
