@@ -782,3 +782,145 @@ async def test_no_consecutive_asks():
         # Assert it gave the advice instead of the question
         assert "सिंचाई" in last_msg
         assert "यूरिया डाला" not in last_msg
+
+@pytest.mark.asyncio
+async def test_warm_intro_name_collection():
+    """
+    Asserts: If name is unknown and farmer sends greeting,
+    the bot returns a warm Vigour intro and asks for their name.
+    """
+    phone = "919000001082"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    mock_responses = make_mock_complete_sequence([
+        {
+            "action": "ask",
+            "message": "नमस्ते किसान भाई! 🌱 मैं Vigour मित्र — Vigour Seeds का कृषि सहायक। हम अच्छी फसल और बेहतर पैदावार में आपकी मदद करते हैं। पहले बताइए, आपका नाम क्या है?"
+        }
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.greet_intro",
+            from_phone=phone,
+            type="text",
+            text="hello",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        
+        assert "Vigour Seeds" in last_msg
+        assert "Vigour मित्र" in last_msg
+        assert "नाम क्या है" in last_msg
+
+
+@pytest.mark.asyncio
+async def test_natural_onboarding_and_no_blocking():
+    """
+    Asserts: A direct request for seed is helped first (not blocked by onboarding).
+    The bot lists the seed and may naturally ask at most ONE onboarding question.
+    """
+    phone = "919000001083"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "name": "रामलाल"
+        }
+    })
+    mock_whatsapp_client.clear()
+
+    # The mock returns find_products and then lists the product and asks for land size (1 question).
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Maize"},
+        {
+            "action": "reply", 
+            "message": "रामलाल जी, हमारे पास Vigour Maize 99 बीज है। आपकी कुल ज़मीन कितनी एकड़ है?"
+        }
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.direct_request",
+            from_phone=phone,
+            type="text",
+            text="makka ka beej chahiye",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        
+        # Verify it lists products and does not block
+        assert "Vigour Maize 99" in last_msg
+        # Verify it asks at most one onboarding question
+        assert "ज़मीन" in last_msg
+        # Ensure it doesn't query state or water source in the same message (no interrogation)
+        assert "सिंचाई" not in last_msg
+
+
+@pytest.mark.asyncio
+async def test_short_reply_context_resolution():
+    """
+    Asserts: If bot asks "बीज चाहिए तो बताइए" and farmer replies "Han",
+    the agent resolves the context to show the Maize seeds (calls find_products).
+    """
+    phone = "919000001084"
+    await sessions_repo.delete(phone)
+    
+    from app.db.repositories.conversations import conversations_repo
+    await conversations_repo.delete(phone)
+    
+    # Log bot's previous question
+    await conversations_repo.log({
+        "whatsapp_phone": phone,
+        "direction": "inbound",
+        "message_text": "mujhe beej ki jankari chahiye",
+        "wamid": "inbound_wamid",
+        "message_id": "msg_inbound",
+        "lead_id": "L_test_short",
+        "message_type": "text",
+        "handled_by": "bot"
+    })
+    await conversations_repo.log({
+        "whatsapp_phone": phone,
+        "direction": "outbound",
+        "message_text": "अगर मक्के का बीज चाहिए तो बताइए?",
+        "wamid": "outbound_wamid",
+        "message_id": "msg_outbound",
+        "lead_id": "L_test_short",
+        "message_type": "text",
+        "handled_by": "bot"
+    })
+
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "crop": "Maize"
+        }
+    })
+    mock_whatsapp_client.clear()
+
+    # When the user responds with "Han", the agent resolves the context:
+    # 1. Runs find_products
+    # 2. Responds with the product
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Maize"},
+        {"action": "reply", "message": "जी हाँ! हमारे पास Vigour Maize 99 बीज उपलब्ध है।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        msg = ParsedMessage(
+            wamid="wamid.short_yes",
+            from_phone=phone,
+            type="text",
+            text="Han",
+            timestamp="1718563800"
+        )
+        await conversation_router.route_message(msg)
+        last_msg = mock_whatsapp_client.sent_messages[-1]["body"]
+        
+        # Verify it showed the products
+        assert "Vigour Maize 99" in last_msg
+
