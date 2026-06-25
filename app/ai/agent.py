@@ -1463,6 +1463,131 @@ def is_valid_image_url(url: Any) -> bool:
         )
     return True
 
+def is_dont_know(text: str) -> bool:
+    if not text:
+        return False
+    import re
+    text_clean = text.strip().lower()
+    text_clean = re.sub(r"[,\-\s\(\)\.\?।!]+", " ", text_clean).strip()
+    dont_know_phrases = {
+        "pata nahi", "pata nhi", "nahi pata", "nhi pata", "no idea", "don't know", "dont know", "not sure", 
+        "malum nahi", "malum nhi", "malam nahi", "malam nhi", "nahi malum", "nhi malum", "nahi malam", "nhi malam",
+        "pata nahi hai", "pata nhi hai", "nhi malum hai", "nahi malum hai"
+    }
+    return any(p in text_clean for p in dont_know_phrases)
+
+def is_farming_or_problem_request(text: str) -> bool:
+    if not text:
+        return False
+    text_clean = text.strip().lower()
+    
+    if is_list_products_request(text_clean):
+        return True
+        
+    # Additional list/catalog request phrases
+    list_phrases = {
+        "saari fasal", "sari fasal", "saari crop", "sari crop", "kya kya hai", "kon kon si", "kaun kaun si",
+        "kaun si", "kon si", "kaun kaun", "kon kon", "sari kism", "saari kism"
+    }
+    if any(p in text_clean for p in list_phrases):
+        return True
+
+    dealer_keywords = {"dealer", "dealar", "mandi", "diler", "डीलर", "मंडी", "दुकान", "shop", "sales rep", "sales representative"}
+    if any(dk in text_clean for dk in dealer_keywords):
+        return True
+
+    try:
+        from app.data.crop_synonyms import resolve_crop
+        matched_crop = resolve_crop(text_clean)
+        if matched_crop:
+            return True
+    except Exception:
+        pass
+
+    farming_keywords = {
+        'fasal', 'beej', 'khad', 'dawai', 'keede', 'bimari', 'paidawar', 'kism', 'variety', 
+        'fertilizer', 'pesticide', 'insect', 'disease', 'yield', 'sowing', 'sow', 'pest', 'weed', 
+        'fungus', 'soil', 'urea', 'dap', 'npk', 'potash', 'zinc', 'poison', 'insecticide', 
+        'fungicide', 'herbicide', 'sprayer', 'growth', 'kisaan', 'kisan', 'vigour', 'veegor', 'vigoor', 
+        'vigore', 'product', 'dawa', 'dikkat', 'samasya', 'problem', 'kharaab', 'kharab', 'damage', 'sukh', 
+        'chote', 'illey', 'illiyan', 'illi', 'dhaan', 'chawal', 'kheti', 'khet', 'mandi', 'khard', 'kharid',
+        # Hindi Unicode
+        'फसल', 'बीज', 'खाद', 'दवा', 'कीड़े', 'बीमारी', 'पैदावार', 'किस्म', 'डीलर', 'मंडी', 
+        'खेत', 'खेती', 'उर्वरक', 'कीटनाशक', 'रोग', 'खरपतवार', 'मिट्टी', 'यूरिया', 
+        'किसान', 'उत्पाद', 'समस्या', 'दिक्कत', 'खराब', 'इल्ली', 'इल्लियां'
+    }
+    
+    import re
+    words = re.findall(r"[\w\u0900-\u097F]+", text_clean)
+    for word in words:
+        if word in farming_keywords:
+            return True
+            
+    for kw in farming_keywords:
+        if kw in text_clean:
+            return True
+            
+    question_words = {
+        "kya", "kaise", "kyu", "kyun", "kab", "kaha", "kahan", "kon", "kaun", "konsa", "konsi", "kaunsa", "kaunsi",
+        "what", "how", "why", "when", "where", "which", "who", "whom",
+        "क्या", "कैसे", "क्यों", "कब", "कहाँ", "कहा", "कौन", "कौनसा", "कौनसी"
+    }
+    
+    if any(q in text_clean for q in question_words) or "?" in text_clean or "？" in text_clean:
+        return True
+        
+    return False
+
+def is_simple_name_reply(text: str) -> bool:
+    if not text:
+        return False
+    text_clean = text.strip().lower()
+    words = text_clean.split()
+    if len(words) > 4:
+        return False
+        
+    if is_greeting_message(text_clean):
+        return False
+        
+    if is_farming_or_problem_request(text_clean):
+        return False
+        
+    common_short_replies = {
+        "haan", "yes", "no", "nahi", "ok", "okay", "haji", "ji", "जी", "हाँ", "नहीं", "हॉं", "han", "nhi", "na",
+        "pata nahi", "pata nhi", "don't know", "dont know"
+    }
+    import re
+    clean_alnum = re.sub(r"[^\w\s\u0900-\u097F]", "", text_clean).strip()
+    if clean_alnum in common_short_replies:
+        return False
+        
+    if any(c.isdigit() for c in text_clean):
+        return False
+        
+    return True
+
+def extract_name_from_reply(text: str) -> str:
+    if not text:
+        return "किसान"
+    text_clean = text.strip()
+    import re
+    
+    prefix_patterns = [
+        r"^(mera\s+naam\s+is|mera\s+naam|my\s+name\s+is|i\s+am|im|i'm|main|mein|me)\s+",
+        r"^(मेरा\s+नाम\s+है|मेरा\s+नाम|मैं|मै)\s+"
+    ]
+    cleaned = text_clean
+    for p in prefix_patterns:
+        cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE)
+        
+    suffix_patterns = [
+        r"\s+(hu|hai|हूं|हूँ|है)$"
+    ]
+    for p in suffix_patterns:
+        cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE)
+        
+    return get_clean_farmer_name(cleaned.strip())
+
 async def run_agent(phone: str, message: NormalizedMessage) -> str:
     if message.type == "image":
         return "माफ़ कीजिए किसान भाई, अभी मैं फोटो नहीं देख पाता। आप अपनी फसल की समस्या शब्दों में बता दीजिए, मैं मदद करूँगा।"
@@ -1498,6 +1623,143 @@ async def run_agent(phone: str, message: NormalizedMessage) -> str:
 
     if not user_input.strip():
         return "नमस्ते 🙏 मैं आपकी किस प्रकार सहायता कर सकता हूँ?"
+
+    # === DETERMINISTIC ONBOARDING GATE ===
+    is_request = is_farming_or_problem_request(user_input)
+    
+    # Check if the user is in onboarding flow:
+    # 1. No last bot question (brand new session)
+    # 2. Or last bot question was one of the onboarding questions
+    # 3. Or user said hello/greeting
+    # AND they do not already have crop or problem information (which means they bypassed onboarding or are in normal mode)
+    last_bot_q = collected.get("last_bot_question") or ""
+    onboarding_questions = [
+        "नाम क्या है",
+        "राज्य और ज़िले",
+        "राज्य और जिला",
+        "कुल कितनी ज़मीन",
+        "कुल कितनी जमीन",
+        "सिंचाई का साधन",
+        "सिंचाई का क्या साधन"
+    ]
+    is_onboarding_q = any(q in last_bot_q for q in onboarding_questions)
+    is_greet = is_greeting_message(user_input)
+    has_crop_or_problem = bool(collected.get("crop")) or bool(collected.get("problem_summary"))
+    
+    in_onboarding_flow = (not last_bot_q or is_onboarding_q or is_greet) and not has_crop_or_problem
+
+    if not is_request and in_onboarding_flow:
+        onboarding_order = ["name", "state", "total_land", "water_source"]
+        
+        def is_missing(field_name: str) -> bool:
+            if field_name not in collected:
+                return True
+            val = collected.get(field_name)
+            if val is None:
+                return True
+            val_str = str(val).strip()
+            return val_str in ("", "Unknown", "None", "null")
+
+        last_asked = collected.get("last_onboarding_field")
+        user_said_dont_know = is_dont_know(user_input)
+        
+        # Save whatever the user just provided for the last asked onboarding field (if any)
+        if is_missing("name"):
+            if user_said_dont_know:
+                collected["name"] = "किसान भाई"
+                await sessions_repo.upsert(phone, {"collected_json": collected})
+                await save_lead_if_complete(phone, collected)
+            elif is_simple_name_reply(user_input):
+                collected["name"] = extract_name_from_reply(user_input)
+                await sessions_repo.upsert(phone, {"collected_json": collected})
+                await save_lead_if_complete(phone, collected)
+                
+        elif is_missing("state"):
+            if user_said_dont_know and last_asked == "state":
+                collected["state"] = "Not Known"
+                collected["district"] = "Not Known"
+                await sessions_repo.upsert(phone, {"collected_json": collected})
+                await save_lead_if_complete(phone, collected)
+            else:
+                norm_res = await tool_normalize_location(user_input)
+                if norm_res.get("confident"):
+                    collected["state"] = norm_res.get("state")
+                    collected["district"] = norm_res.get("district")
+                    await sessions_repo.upsert(phone, {"collected_json": collected})
+                    await save_lead_if_complete(phone, collected)
+                elif last_asked == "state" and not is_greeting_message(user_input):
+                    collected["state"] = user_input.strip()
+                    collected["district"] = "Unknown"
+                    await sessions_repo.upsert(phone, {"collected_json": collected})
+                    await save_lead_if_complete(phone, collected)
+                    
+        elif is_missing("total_land"):
+            if user_said_dont_know and last_asked == "total_land":
+                collected["total_land"] = "Not Known"
+                await sessions_repo.upsert(phone, {"collected_json": collected})
+                await save_lead_if_complete(phone, collected)
+            else:
+                val = parse_land(user_input)
+                if val is not None:
+                    collected["total_land"] = val
+                    await sessions_repo.upsert(phone, {"collected_json": collected})
+                    await save_lead_if_complete(phone, collected)
+                elif last_asked == "total_land" and not is_greeting_message(user_input):
+                    collected["total_land"] = user_input.strip()
+                    await sessions_repo.upsert(phone, {"collected_json": collected})
+                    await save_lead_if_complete(phone, collected)
+                    
+        elif is_missing("water_source"):
+            if user_said_dont_know and last_asked == "water_source":
+                collected["water_source"] = "Not Known"
+                await sessions_repo.upsert(phone, {"collected_json": collected})
+                await save_lead_if_complete(phone, collected)
+            else:
+                water_keywords = {
+                    "tubewell", "canal", "rain", "kuwan", "well", "irrigation", "tube well", "barish", "nahar", "kuan",
+                    "ट्यूबवेल", "कुआँ", "नहर", "बारिश", "कुआं"
+                }
+                is_water_source_reply = any(wk in user_input.lower() for wk in water_keywords)
+                if is_water_source_reply:
+                    collected["water_source"] = user_input.strip()
+                    await sessions_repo.upsert(phone, {"collected_json": collected})
+                    await save_lead_if_complete(phone, collected)
+                elif last_asked == "water_source" and not is_greeting_message(user_input):
+                    collected["water_source"] = user_input.strip()
+                    await sessions_repo.upsert(phone, {"collected_json": collected})
+                    await save_lead_if_complete(phone, collected)
+
+        # Recalculate first missing field
+        first_missing = None
+        for field in onboarding_order:
+            if is_missing(field):
+                first_missing = field
+                break
+                
+        if first_missing is not None:
+            reply_message = ""
+            if first_missing == "name":
+                reply_message = "नमस्ते किसान भाई! 🌱 मैं Vigour मित्र — Vigour Seeds का कृषि सहायक। हम अच्छी फसल और बेहतर पैदावार में आपकी मदद करते हैं। पहले बताइए, आपका नाम क्या है?"
+            elif first_missing == "state":
+                name_val = get_clean_farmer_name(collected.get("name"))
+                reply_message = f"किसान भाई {name_val}, आप किस राज्य और ज़िले से हैं?"
+            elif first_missing == "total_land":
+                reply_message = "आपके पास कुल कितनी ज़मीन है (एकड़/बीघा में)?"
+            elif first_missing == "water_source":
+                reply_message = "आपके खेत में सिंचाई का साधन क्या है (ट्यूबवेल/कुआँ/नहर/बारिश)?"
+
+            collected["last_onboarding_field"] = first_missing
+            
+            history_sent = collected.get("sent_messages_history", [])
+            history_sent.append(reply_message)
+            if len(history_sent) > 5:
+                history_sent = history_sent[-5:]
+            collected["sent_messages_history"] = history_sent
+            collected["last_bot_question"] = reply_message
+
+            await sessions_repo.upsert(phone, {"collected_json": collected})
+            return reply_message
+    # === END OF ONBOARDING GATE ===
 
     turn_messages = [f"User: {user_input}"]
     loop_count = 0

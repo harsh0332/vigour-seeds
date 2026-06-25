@@ -7,6 +7,7 @@ from app.whatsapp.models import ParsedMessage
 from app.flows.router import conversation_router
 from app.whatsapp.client import whatsapp_client
 from app.core.errors import MetaApiException
+from app.whatsapp.client import WhatsAppClient
 
 def make_mock_complete_sequence(json_responses):
     """
@@ -23,8 +24,6 @@ def make_mock_complete_sequence(json_responses):
             return res
         return json.dumps({"action": "reply", "message": "नमस्ते!"})
     return mock_call
-
-from app.whatsapp.client import WhatsAppClient
 
 @pytest.mark.asyncio
 async def test_send_image_client_success():

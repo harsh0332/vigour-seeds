@@ -222,10 +222,10 @@ async def test_full_onboarding_flow():
     await sessions_repo.delete(phone)
     
     turns = [
-        ("Hye", [{"action": "reply", "message": "नमस्ते! आपका नाम क्या है?"}], "नमस्ते! आपका नाम क्या है?"),
-        ("महिपाल", [{"action": "save_profile", "fields": {"name": "महिपाल"}}, {"action": "reply", "message": "महिपाल जी, आप किस राज्य और जिला से हैं?"}], "महिपाल जी, आप किस राज्य और जिला से हैं?"),
-        ("MP Dhar", [{"action": "save_profile", "fields": {"state": "Madhya Pradesh", "district": "Dhar"}}, {"action": "reply", "message": "धन्यवाद। आपकी कुल जमीन (एकड़ में) कितनी है?"}], "धन्यवाद। आपकी कुल जमीन (एकड़ में) कितनी है?"),
-        ("10", [{"action": "save_profile", "fields": {"total_land": "10"}}, {"action": "reply", "message": "सिंचाई का साधन क्या है (जैसे ट्यूबवेल, कुआँ, नहर)?"}], "सिंचाई का साधन क्या है (जैसे ट्यूबवेल, कुआँ, नहर)?"),
+        ("Hye", [], "नमस्ते किसान भाई! 🌱 मैं Vigour मित्र — Vigour Seeds का कृषि सहायक। हम अच्छी फसल और बेहतर पैदावार में आपकी मदद करते हैं। पहले बताइए, आपका नाम क्या है?"),
+        ("महिपाल", [], "किसान भाई महिपाल, आप किस राज्य और ज़िले से हैं?"),
+        ("MP Dhar", [], "आपके पास कुल कितनी ज़मीन है (एकड़/बीघा में)?"),
+        ("10", [], "आपके खेत में सिंचाई का साधन क्या है (ट्यूबवेल/कुआँ/नहर/बारिश)?"),
         ("ट्यूबवेल", [{"action": "save_profile", "fields": {"water_source": "ट्यूबवेल"}}, {"action": "reply", "message": "आप अभी अपने खेत में कौन सी फसल उगा रहे हैं?"}], "आप अभी अपने खेत में कौन सी फसल उगा रहे हैं?"),
         ("Soybean", [{"action": "save_profile", "fields": {"crop": "Soybean"}}, {"action": "reply", "message": "आपकी Soybean फसल में अभी क्या दिक्कत आ रही है?"}], "आपकी Soybean फसल में अभी क्या दिक्कत आ रही है?")
     ]
@@ -887,6 +887,15 @@ async def test_short_reply_context_resolution():
     the agent resolves the context to show the Maize seeds (calls find_products).
     """
     phone = "919000001084"
+    in_memory_db.clear_all()
+    in_memory_db.seed_defaults()
+    in_memory_db.tables["products"].append({
+        "product_id": "PROD_M1",
+        "variety_name": "Vigour Maize 99",
+        "crop": "Maize",
+        "approved_for_recommendation": "Y"
+    })
+
     await sessions_repo.delete(phone)
     
     from app.db.repositories.conversations import conversations_repo
@@ -916,21 +925,12 @@ async def test_short_reply_context_resolution():
 
     await sessions_repo.upsert(phone, {
         "collected_json": {
+            "name": "Ramesh",
             "greeted": True,
             "crop": "Maize"
         }
     })
     mock_whatsapp_client.clear()
-
-    # Seed the product so find_products returns it as approved
-    in_memory_db.clear_all()
-    in_memory_db.seed_defaults()
-    in_memory_db.tables["products"].append({
-        "product_id": "PROD_M1",
-        "variety_name": "Vigour Maize 99",
-        "crop": "Maize",
-        "approved_for_recommendation": "Y"
-    })
 
     # When the user responds with "Han", the agent resolves the context:
     # 1. Runs find_products
@@ -1128,7 +1128,7 @@ async def test_generic_fallback_conversational_on_json_failure():
             wamid="wamid.json_failure_test",
             from_phone=phone,
             type="text",
-            text="hello",
+            text="soybean me dikkat hai",
             timestamp="1718563800"
         )
         await conversation_router.route_message(msg)
@@ -1233,7 +1233,7 @@ async def test_onboarding_idle_flow_step_by_step():
         assert "सिंचाई" in mock_whatsapp_client.sent_messages[-1]["body"]
 
     session = await sessions_repo.get(phone)
-    assert session.collected_json.get("total_land") == "5 acre"
+    assert session.collected_json.get("total_land") == 5.0
     assert not session.collected_json.get("water_source")
 
     # 5. Farmer replies "borewell" -> save water source, reply hello/ready
@@ -1640,15 +1640,6 @@ async def test_recommendation_multiple_products_one_image():
     and other product variety names appear in the caption.
     """
     phone = "919000004051"
-    await sessions_repo.delete(phone)
-    await sessions_repo.upsert(phone, {
-        "collected_json": {
-            "greeted": True,
-            "crop": "Maize"
-        }
-    })
-    mock_whatsapp_client.clear()
-
     # Seed two products with image_urls
     in_memory_db.clear_all()
     in_memory_db.seed_defaults()
@@ -1670,6 +1661,16 @@ async def test_recommendation_multiple_products_one_image():
             "image_url": "https://mock.supabase.co/storage/v1/object/public/crop-photos/corn-2.png"
         }
     ])
+
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "name": "Ramesh",
+            "greeted": True,
+            "crop": "Maize"
+        }
+    })
+    mock_whatsapp_client.clear()
 
     mock_responses = make_mock_complete_sequence([
         {"action": "find_products", "crop": "Maize"},
