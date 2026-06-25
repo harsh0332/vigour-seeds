@@ -50,11 +50,17 @@ PYTHONPATH=. pytest tests/
 ```
 
 ### Regression Tests
-Run the specific conversation-level regression test suite:
+Run the complete regression test suites to guarantee all past features remain intact:
 ```bash
-PYTHONPATH=. pytest tests/test_conversations.py
+PYTHONPATH=. ./venv/bin/pytest tests/test_conversations.py
+PYTHONPATH=. ./venv/bin/pytest tests/test_agent_regression.py
 ```
-This suite covers core user interactions, agent flows, intent classifications, and product recommendation safeguards completely offline. It is highly recommended to run this suite before pushing any code changes or deploying to staging/production.
+These suites cover onboarding priority, direct seed requests, available crop list queries, crop switches, no-product crop fallback handling, safety locks, off-topic classifications, image upload polite refusal, and fabricated-product post-reply safeguards completely offline.
+
+**Crucial Deployment Checklist**:
+- You **MUST** run the full test suite (`PYTHONPATH=. ./venv/bin/pytest`) and ensure all tests are green before pushing any code to GitHub.
+- If any test fails, it means a past behavior broke — **fix it** before pushing.
+- CI on GitHub Actions must be green before deploying.
 
 ### Docker Verification
 Build and run the container locally:
