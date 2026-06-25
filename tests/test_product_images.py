@@ -284,3 +284,76 @@ async def test_multiple_products_one_image_and_text_listing():
         assert second["image_url"] == "https://mock.supabase.co/storage/v1/object/public/crop-photos/corn-1.png"
         assert "*VIGOUR 60A90*" in second["caption"]
         assert "*VIGOUR 30A90*" in second["caption"]
+
+def test_strip_image_urls_helper():
+    from app.ai.agent import strip_image_urls
+    text = "यहाँ आपका उत्पाद है: https://kaubgntvamwamgodotew.supabase.co/storage/v1/object/public/product-images/maize.png\n\nकृपया इसे देखें।"
+    assert strip_image_urls(text) == "यहाँ आपका उत्पाद है:\n\nकृपया इसे देखें।"
+    
+    text2 = "https://supabase.co/test.png\n\n\n"
+    assert strip_image_urls(text2) == ""
+
+@pytest.mark.asyncio
+async def test_agent_response_contains_no_raw_urls():
+    phone = "919000005009"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "crop": "Maize"
+        }
+    })
+    mock_whatsapp_client.clear()
+
+    in_memory_db.clear_all()
+    in_memory_db.seed_defaults()
+    in_memory_db.tables["products"].append({
+        "product_id": "PROD_M100",
+        "variety_name": "VIGOUR TEST 99",
+        "crop": "Maize",
+        "key_traits": "High yield",
+        "approved_for_recommendation": "Y",
+        "image_url": "https://mock.supabase.co/storage/v1/object/public/crop-photos/corn-99.png"
+    })
+
+    # The mock complete sequence
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Maize"},
+        {"action": "reply", "message": "यहाँ देखें: https://mock.supabase.co/storage/v1/object/public/crop-photos/corn-99.png और *VIGOUR TEST 99* का उपयोग करें।"}
+    ])
+
+    complete_spy = AsyncMock(side_effect=mock_responses)
+
+    with patch.object(mock_ai_provider, "complete", complete_spy):
+        await conversation_router.route_message(ParsedMessage(
+            wamid="w_no_url_test",
+            from_phone=phone,
+            type="text",
+            text="makka variety link",
+            timestamp="1718563800"
+        ))
+
+        # 1. Assert that the sent text reply does NOT contain raw url
+        assert len(mock_whatsapp_client.sent_messages) == 2
+        text_message = mock_whatsapp_client.sent_messages[0]
+        assert text_message["type"] == "text"
+        assert "http" not in text_message["body"]
+        assert "supabase.co" not in text_message["body"]
+        assert "VIGOUR TEST 99" in text_message["body"]
+
+        # 2. Assert that the image message is still sent with the correct image URL and caption
+        image_message = mock_whatsapp_client.sent_messages[1]
+        assert image_message["type"] == "image"
+        assert image_message["image_url"] == "https://mock.supabase.co/storage/v1/object/public/crop-photos/corn-99.png"
+        assert "VIGOUR TEST 99" in image_message["caption"]
+
+        # 3. Assert that LLM-facing JSON contains NO image_url
+        assert complete_spy.call_count > 0
+        for call in complete_spy.call_args_list:
+            args, kwargs = call
+            system_prompt = kwargs.get("system") or ""
+            user_prompt = kwargs.get("user") or ""
+            full_prompt = system_prompt + "\n" + user_prompt
+            if "Tool Result" in full_prompt:
+                assert "image_url" not in full_prompt
+

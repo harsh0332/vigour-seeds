@@ -1325,6 +1325,7 @@ Vigour Seeds विश्वसनीय बीज उत्पादक है 
 11. किसी मेन्यू, बटन या विकल्प सूची का ज़िक्र न करें — खुली, स्वाभाविक बातचीत करें।
 12. **जवाबों को छोटा रखें (Shorter Replies)**: अपने जवाबों को छोटा और WhatsApp-अनुकूल रखें — सामान्यतः 2 से 4 छोटी पंक्तियाँ। महत्वपूर्ण सलाह संक्षेप में दें और बहुत लंबे पैराग्राफ लिखने से बचें।
 13. **फोटो/इमेज का ज़िक्र न करें (No Photo requests)**: किसान से कभी भी फसल की फोटो भेजने के लिए न कहें और न ही फोटो देखने का कोई प्रस्ताव दें। बातचीत में किसी भी प्रकार की फोटो का कोई ज़िक्र नहीं होना चाहिए।
+13a. **इमेज URL या लिंक कभी न लिखें (No Image URLs)**: कभी भी कोई इमेज URL या लिंक (जैसे supabase.co वाला लिंक) अपने टेक्स्ट जवाब में मत लिखो। उत्पाद की तस्वीर अलग से भेजी जाती है।
 
 Soft Funnel और भरोसेमंद सलाह के नियम (Soft Funnel & Trust-First Selling):
 14. **सॉफ्ट फनल (Soft Funnel - General, any crop/problem)**: सबसे पहले किसान के वास्तविक प्रश्न या समस्या को समझें और उसका संक्षेप में समाधान (सलाह/agronomy advice) दें। इसके बाद, केवल तभी जब `find_products` के रिस्पॉन्स में कोई उपयुक्त और अनुमोदित (APPROVED) Vigour बीज उपलब्ध हो, उसे स्वाभाविक रूप से सुझाएं। बीज की सिफ़ारिश को मददगार तरीके से पेश करें (जैसे: "इसके लिए हमारी यह किस्म अच्छी रहेगी क्योंकि… [वास्तविक कारण या विशेषता]")। यदि उस फसल के लिए कोई अनुमोदित उत्पाद उपलब्ध न हो, तो केवल निष्पक्ष कृषि सलाह दें और जबरदस्ती कोई उत्पाद बेचने की कोशिश न करें।
@@ -1462,6 +1463,24 @@ def is_valid_image_url(url: Any) -> bool:
             extra={"url": url_clean}
         )
     return True
+
+def strip_image_urls(text: str) -> str:
+    if not text:
+        return text
+    import re
+    cleaned = re.sub(r"https?://\S+", "", text)
+    lines = [line.rstrip() for line in cleaned.splitlines()]
+    non_empty_lines = []
+    for line in lines:
+        if line.strip():
+            non_empty_lines.append(line)
+        elif non_empty_lines and non_empty_lines[-1] != "":
+            non_empty_lines.append("")
+    while non_empty_lines and non_empty_lines[-1] == "":
+        non_empty_lines.pop()
+    while non_empty_lines and non_empty_lines[0] == "":
+        non_empty_lines.pop(0)
+    return "\n".join(non_empty_lines)
 
 def is_dont_know(text: str) -> bool:
     if not text:
@@ -1912,7 +1931,20 @@ async def run_agent(phone: str, message: NormalizedMessage) -> str:
             await sessions_repo.upsert(phone, {"collected_json": collected})
             
             turn_messages.append(f"Agent Action: {cleaned_response}")
-            turn_messages.append(f"Tool Result: {json.dumps(res, ensure_ascii=False)}")
+            
+            sanitized_res = []
+            if isinstance(res, list):
+                for p in res:
+                    if isinstance(p, dict):
+                        p_copy = dict(p)
+                        p_copy.pop("image_url", None)
+                        sanitized_res.append(p_copy)
+                    else:
+                        sanitized_res.append(p)
+            else:
+                sanitized_res = res
+                
+            turn_messages.append(f"Tool Result: {json.dumps(sanitized_res, ensure_ascii=False)}")
             loop_count += 1
 
         elif action == "list_available_crops":
@@ -2042,6 +2074,8 @@ async def run_agent(phone: str, message: NormalizedMessage) -> str:
                     break
             except Exception as rephrase_err:
                 logger.error("Failed to generate non-duplicate rephrased message", extra={"error": str(rephrase_err)})
+
+    reply_message = strip_image_urls(reply_message)
 
     # Persist reply to history
     history_sent.append(reply_message)
@@ -2401,7 +2435,12 @@ async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> st
                             user=f"Explain no products available for: {collected.get('crop')}"
                         )
                     else:
-                        products_data_str = json.dumps(products, ensure_ascii=False)
+                        sanitized_products = []
+                        for p in products:
+                            p_copy = dict(p)
+                            p_copy.pop("image_url", None)
+                            sanitized_products.append(p_copy)
+                        products_data_str = json.dumps(sanitized_products, ensure_ascii=False)
                         recommend_prompt = RECOMMENDATION_SYSTEM_PROMPT.format(
                             farmer_name=get_clean_farmer_name(collected.get("name")),
                             state=collected.get("state"),
