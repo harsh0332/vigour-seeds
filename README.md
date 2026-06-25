@@ -39,6 +39,12 @@ This is **Phase 1** of development: Scaffold, health checks, webhook verificatio
     uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ```
 
+5.  **Product Images Migration**:
+    Re-host product images from the external website to Supabase Storage and update the database image URLs:
+    ```bash
+    PYTHONPATH=. ./venv/bin/python scripts/migrate_product_images.py
+    ```
+
 ---
 
 ## Verification & Testing
