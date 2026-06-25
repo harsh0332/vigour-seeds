@@ -249,26 +249,30 @@ class WhatsAppClient:
             }
         }
         logger.info("Sending image message", extra={"to": to, "image_url": image_url})
-        res = await self._post_request(payload)
-        
-        # Increment outbound messages metric
-        metrics_service.increment_msgs_out()
-        
-        # Log outbound message
-        msg_id = res.get("messages", [{}])[0].get("id") if res else None
-        if not msg_id:
-            msg_id = f"out_{uuid.uuid4()}"
+        try:
+            res = await self._post_request(payload)
             
-        await conversations_repo.log({
-            "message_id": msg_id,
-            "lead_id": to,
-            "whatsapp_phone": to,
-            "direction": "outbound",
-            "message_type": "image",
-            "message_text": truncated_caption,
-            "handled_by": "bot"
-        })
-        return res
+            # Increment outbound messages metric
+            metrics_service.increment_msgs_out()
+            
+            # Log outbound message
+            msg_id = res.get("messages", [{}])[0].get("id") if res else None
+            if not msg_id:
+                msg_id = f"out_{uuid.uuid4()}"
+                
+            await conversations_repo.log({
+                "message_id": msg_id,
+                "lead_id": to,
+                "whatsapp_phone": to,
+                "direction": "outbound",
+                "message_type": "image",
+                "message_text": truncated_caption,
+                "handled_by": "bot"
+            })
+            return res
+        except Exception as e:
+            logger.error("Meta API send_image failed", extra={"to": to, "image_url": image_url, "error": str(e)}, exc_info=True)
+            return {"image_failed": True}
 
     async def _execute_media_download(self, url: str, headers: Dict[str, str]) -> Tuple[bytes, str]:
         async with httpx.AsyncClient(timeout=self.timeout) as client:

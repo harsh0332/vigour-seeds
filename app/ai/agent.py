@@ -1443,6 +1443,26 @@ def get_short_traits_hindi(crop: str, key_traits: str) -> str:
             
     return " और ".join(matched[:2])
 
+def is_valid_image_url(url: Any) -> bool:
+    if not url or not isinstance(url, str):
+        return False
+    url_clean = url.strip()
+    url_lower = url_clean.lower()
+    if not (url_lower.startswith("http://") or url_lower.startswith("https://")):
+        return False
+        
+    valid_exts = (".png", ".jpg", ".jpeg", ".webp")
+    path_only = url_lower.split("?")[0]
+    if not path_only.endswith(valid_exts):
+        return False
+        
+    if "supabase" not in url_lower:
+        logger.warning(
+            "Product image URL does not point to Supabase storage",
+            extra={"url": url_clean}
+        )
+    return True
+
 async def run_agent(phone: str, message: NormalizedMessage) -> str:
     if message.type == "image":
         return "माफ़ कीजिए किसान भाई, अभी मैं फोटो नहीं देख पाता। आप अपनी फसल की समस्या शब्दों में बता दीजिए, मैं मदद करूँगा।"
@@ -1780,7 +1800,7 @@ async def run_agent(phone: str, message: NormalizedMessage) -> str:
     primary_product = None
     if mentioned_products:
         for p in mentioned_products:
-            if p.get("image_url") and p["image_url"].strip().startswith(("http://", "https://")):
+            if is_valid_image_url(p.get("image_url")):
                 primary_product = p
                 break
                 
@@ -1804,7 +1824,11 @@ async def run_agent(phone: str, message: NormalizedMessage) -> str:
             
         try:
             # Send the image message
-            await whatsapp_client.send_image(phone, primary_product["image_url"], caption)
+            res = await whatsapp_client.send_image(phone, primary_product["image_url"], caption)
+            if res and res.get("image_failed"):
+                logger.warning("send_image failed (image_failed signal), falling back to text recommendation", 
+                               extra={"phone": phone})
+                await whatsapp_client.send_text(phone, caption)
         except Exception as img_err:
             logger.error("Failed to send product image, falling back to sending product recommendation as text", 
                          extra={"phone": phone, "error": str(img_err)}, exc_info=True)

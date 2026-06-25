@@ -40,7 +40,7 @@ This is **Phase 1** of development: Scaffold, health checks, webhook verificatio
     ```
 
 5.  **Product Images Migration**:
-    Re-host product images from the external website to Supabase Storage and update the database image URLs:
+    Product images are hosted on Supabase (bucket `product-images`). To re-host or refresh product images from the external website to Supabase Storage and update the database image URLs, re-run:
     ```bash
     PYTHONPATH=. ./venv/bin/python scripts/migrate_product_images.py
     ```
