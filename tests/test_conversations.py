@@ -1445,5 +1445,137 @@ async def test_no_product_crop_jowar_action():
         assert "Soybean" in last_body
 
 
+@pytest.mark.parametrize("crop_name, problem_text, variety_sample", [
+    ("Maize", "meri makka me keede hai", "VIGOUR 60A90"),
+    ("Soybean", "soybean me peela rog hai", "Vigour 335"),
+    ("Wheat", "gehu me balli nahi ban rahi", "Vigour Wheat Sample"),
+    ("Tomato", "tamatar me patta modak rog hai", "Vigour Tomato Sample")
+])
+@pytest.mark.asyncio
+async def test_soft_funnel_approved_seed_once(crop_name, problem_text, variety_sample):
+    """
+    Asserts: After advice on a fitting-crop problem, the bot offers a relevant approved
+    Vigour seed ONCE, with a reason, not repeatedly.
+    """
+    phone = f"91900000400{ord(crop_name[0])}"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    # Seed the product
+    db_prod = {
+        "product_id": f"PROD_{crop_name.upper()}",
+        "variety_name": variety_sample,
+        "crop": crop_name,
+        "duration_days": "100",
+        "mrp_inr": 200.0,
+        "key_traits": "रोग प्रतिरोधक क्षमता",
+        "pest_disease_tolerance": "Tolerant",
+        "pack_size": "10 kg",
+        "approved_for_recommendation": "Y",
+        "target_region": "MP"
+    }
+    in_memory_db.tables["products"] = [db_prod]
+
+    # First turn: Farmer asks about problem. Bot advises and offers seed.
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": crop_name, "problem": problem_text},
+        {"action": "reply", "message": f"सलाह: सिंचाई बढ़ाएं। इसके लिए हमारी *{variety_sample}* किस्म भी अच्छी रहेगी क्योंकि यह रोग-प्रतिरोधी है।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(
+            wamid="w1",
+            from_phone=phone,
+            type="text",
+            text=problem_text,
+            timestamp="1718563800"
+        ))
+        
+        last_body = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert variety_sample in last_body
+        assert "सलाह" in last_body
+
+    # Second turn: Farmer follows up. Since product was already pitched, bot should NOT repeat pitch / ask if they want seed.
+    # It should just offer advice or answer the question.
+    mock_responses_2 = make_mock_complete_sequence([
+        {"action": "reply", "message": "जी भाई, सिंचाई शाम के समय ही करें।"}
+    ])
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses_2)):
+        await conversation_router.route_message(ParsedMessage(
+            wamid="w2",
+            from_phone=phone,
+            type="text",
+            text="paani kab dena chahiye?",
+            timestamp="1718563860"
+        ))
+        
+        last_body_2 = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert variety_sample not in last_body_2
+        assert "बीज चाहिए" not in last_body_2
+
+
+@pytest.mark.asyncio
+async def test_pure_advice_no_product():
+    """
+    Asserts: A pure-advice question where no product fits (e.g. coriander/dhaniya or no approved product)
+    returns advice only without any product push.
+    """
+    phone = "919000004010"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    # Clear products for Coriander/Dhaniya
+    in_memory_db.tables["products"] = [
+        {"product_id": "P1", "crop": "Maize", "approved_for_recommendation": "Y"}
+    ]
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Coriander", "problem": "peela rog"},
+        {"action": "reply", "message": "धनिया में पीले रोग के लिए संतुलित खाद और हल्की सिंचाई करें।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(
+            wamid="w1",
+            from_phone=phone,
+            type="text",
+            text="dhaniya me peela rog hai kya kare",
+            timestamp="1718563800"
+        ))
+        
+        last_body = mock_whatsapp_client.sent_messages[-1]["body"]
+        # Should NOT contain any fabricated product names
+        assert "धनिया" in last_body
+        assert "Vigour" not in last_body  # Since there are no coriander products, no product should be pushed
+
+
+@pytest.mark.asyncio
+async def test_thanks_warm_close_no_pitch():
+    """
+    Asserts: Farmer saying thanks/ok receives a warm close, without pitching a product.
+    """
+    phone = "919000004020"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "reply", "message": "आपका बहुत-बहुत धन्यवाद किसान भाई! कोई और सहायता चाहिए तो जरूर बताएं।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(
+            wamid="w1",
+            from_phone=phone,
+            type="text",
+            text="dhanyawad bhaiya sab thik hai",
+            timestamp="1718563800"
+        ))
+        
+        last_body = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "धन्यवाद" in last_body
+        assert "बीज" not in last_body  # No seed pitch on closing/thanks
+
+
+
 
 
