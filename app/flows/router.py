@@ -161,7 +161,8 @@ class ConversationRouter:
         from app.ai.agent import respond
         try:
             response_text = await respond(phone, message)
-            await whatsapp_client.send_text(phone, response_text)
+            if response_text and response_text.strip():
+                await whatsapp_client.send_text(phone, response_text)
         except Exception as e:
             logger.error(f"Failed executing Conversational Agent respond: {e}", exc_info=True)
             await whatsapp_client.send_text(phone, "तकनीकी समस्या आई है 🙏 कृपया थोड़ी देर बाद पुनः प्रयास करें।")

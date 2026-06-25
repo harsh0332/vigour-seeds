@@ -862,7 +862,8 @@ async def tool_find_products(crop: str, problem: str, phone: Optional[str] = Non
                 "pest_disease_tolerance": p.pest_disease_tolerance,
                 "dosage": None,
                 "mrp_inr": p.mrp_inr,
-                "pack_size": p.pack_size
+                "pack_size": p.pack_size,
+                "image_url": p.image_url
             })
     variety_names = [p["variety_name"] for p in res_list]
     logger.info(f"find_products runs: crop_arg={crop}, resolved_canonical_crop={canonical_crop}, variety_names={variety_names}")
@@ -1389,6 +1390,59 @@ OR
 }
 """
 
+CROP_HINDI_MAP = {
+    "maize": "मक्का",
+    "paddy": "धान",
+    "soybean": "सोयाबीन",
+    "wheat": "गेहूं",
+    "hot pepper": "मिर्च",
+    "chilli": "मिर्च",
+    "hot pepper (chilli)": "मिर्च",
+    "tomato": "टमाटर",
+    "watermelon": "तरबूज",
+    "okra": "भिंडी",
+    "chickpea": "चना",
+    "chickpea (chana)": "चना",
+    "chana": "चना",
+    "green gram": "मूंग",
+    "green gram (moong)": "मूंग",
+    "moong": "मूंग",
+    "bajra": "बाजरा",
+    "bajra (pearl millet)": "बाजरा",
+    "pearl millet": "बाजरा",
+    "mustard": "सरसों",
+    "tur": "अरहर",
+    "tur (arhar)": "अरहर",
+    "arhar": "अरहर"
+}
+
+def get_short_traits_hindi(crop: str, key_traits: str) -> str:
+    traits_lower = (key_traits or "").lower()
+    matched = []
+    if "drought" in traits_lower:
+        matched.append("सूखा सहनशील")
+    if "high yield" in traits_lower or "shelling" in traits_lower or "grain" in traits_lower:
+        matched.append("अधिक उपज")
+    if "tolerant" in traits_lower or "resistant" in traits_lower:
+        matched.append("रोग प्रतिरोधी")
+    if "bold seed" in traits_lower:
+        matched.append("मोटे और चमकदार दाने")
+        
+    if not matched:
+        crop_lower = (crop or "").lower()
+        if "maize" in crop_lower or "makka" in crop_lower:
+            return "सूखा सहनशील और अधिक उपज"
+        elif "paddy" in crop_lower or "dhan" in crop_lower:
+            return "रोग प्रतिरोधी और चमकदार दाने"
+        elif "soybean" in crop_lower:
+            return "पीला चमकदार दाना और रोग प्रतिरोधी"
+        elif "wheat" in crop_lower or "gehun" in crop_lower:
+            return "शानدار बालियां और अधिक उपज"
+        else:
+            return "बेहतर उपज और रोग प्रतिरोधी"
+            
+    return " और ".join(matched[:2])
+
 async def run_agent(phone: str, message: NormalizedMessage) -> str:
     if message.type == "image":
         return "माफ़ कीजिए किसान भाई, अभी मैं फोटो नहीं देख पाता। आप अपनी फसल की समस्या शब्दों में बता दीजिए, मैं मदद करूँगा।"
@@ -1715,6 +1769,50 @@ async def run_agent(phone: str, message: NormalizedMessage) -> str:
     collected["last_bot_question"] = reply_message
 
     await sessions_repo.upsert(phone, {"collected_json": collected})
+
+    # Image recommendation logic for Phase 6B
+    mentioned_products = []
+    if reply_message and approved_products_in_this_turn:
+        for p in approved_products_in_this_turn:
+            if p.get("variety_name") and p["variety_name"].lower() in reply_message.lower():
+                mentioned_products.append(p)
+                
+    primary_product = None
+    if mentioned_products:
+        for p in mentioned_products:
+            if p.get("image_url") and p["image_url"].strip().startswith(("http://", "https://")):
+                primary_product = p
+                break
+                
+    if primary_product:
+        # Send the helpful text reply first
+        await whatsapp_client.send_text(phone, reply_message)
+        
+        # Build Hindi caption
+        crop_name = primary_product.get("crop") or ""
+        crop_hindi = CROP_HINDI_MAP.get(crop_name.lower(), crop_name)
+        
+        traits_hindi = get_short_traits_hindi(crop_name, primary_product.get("key_traits") or "")
+        
+        variety_bold = f"*{primary_product['variety_name']}*"
+        caption = f"{variety_bold} 🌱\n{crop_hindi} की बढ़िया किस्म — {traits_hindi}।\nसही दाम के लिए नज़दीकी डीलर से पूछें।"
+        
+        # Add other product names if any
+        other_names = [f"*{p['variety_name']}*" for p in mentioned_products if p != primary_product]
+        if other_names:
+            caption += f"\nअन्य बेहतरीन किस्में: {', '.join(other_names)}"
+            
+        try:
+            # Send the image message
+            await whatsapp_client.send_image(phone, primary_product["image_url"], caption)
+        except Exception as img_err:
+            logger.error("Failed to send product image, falling back to sending product recommendation as text", 
+                         extra={"phone": phone, "error": str(img_err)}, exc_info=True)
+            # Fallback to sending the same details as a second text message
+            await whatsapp_client.send_text(phone, caption)
+            
+        return ""
+
     return reply_message
 
 async def run_farmer_state_machine(phone: str, message: NormalizedMessage) -> str:

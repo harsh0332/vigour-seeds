@@ -235,6 +235,41 @@ class WhatsAppClient:
         })
         return res
 
+    async def send_image(self, to: str, image_url: str, caption: str = "") -> Dict[str, Any]:
+        """Sends an image to the user with a caption (truncated to 1024 chars)."""
+        truncated_caption = caption[:1024] if caption else ""
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "image",
+            "image": {
+                "link": image_url,
+                "caption": truncated_caption
+            }
+        }
+        logger.info("Sending image message", extra={"to": to, "image_url": image_url})
+        res = await self._post_request(payload)
+        
+        # Increment outbound messages metric
+        metrics_service.increment_msgs_out()
+        
+        # Log outbound message
+        msg_id = res.get("messages", [{}])[0].get("id") if res else None
+        if not msg_id:
+            msg_id = f"out_{uuid.uuid4()}"
+            
+        await conversations_repo.log({
+            "message_id": msg_id,
+            "lead_id": to,
+            "whatsapp_phone": to,
+            "direction": "outbound",
+            "message_type": "image",
+            "message_text": truncated_caption,
+            "handled_by": "bot"
+        })
+        return res
+
     async def _execute_media_download(self, url: str, headers: Dict[str, str]) -> Tuple[bytes, str]:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             res = await client.get(url, headers=headers)

@@ -1576,6 +1576,236 @@ async def test_thanks_warm_close_no_pitch():
         assert "बीज" not in last_body  # No seed pitch on closing/thanks
 
 
+@pytest.mark.asyncio
+async def test_recommendation_sends_image_success():
+    """
+    Asserts: Recommending a product with valid image_url sends conversational text first,
+    then the image with a Hindi caption containing bold variety name and dealer line.
+    """
+    phone = "919000004050"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "crop": "Maize"
+        }
+    })
+    mock_whatsapp_client.clear()
+
+    # Seed product with image_url
+    in_memory_db.clear_all()
+    in_memory_db.seed_defaults()
+    in_memory_db.tables["products"].append({
+        "product_id": "PROD_M2",
+        "variety_name": "VIGOUR 60A90",
+        "crop": "Maize",
+        "key_traits": "Drought tolerant; shelling 84%; bold orange grain",
+        "approved_for_recommendation": "Y",
+        "image_url": "https://mock.supabase.co/storage/v1/object/public/crop-photos/corn-1.png"
+    })
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Maize"},
+        {"action": "reply", "message": "किसान भाई, मक्के के लिए आप *VIGOUR 60A90* लगा सकते हैं।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(
+            wamid="w_img_1",
+            from_phone=phone,
+            type="text",
+            text="makke ke liye kaun sa beej accha hai",
+            timestamp="1718563800"
+        ))
+        
+        # We expect two sent messages: text then image
+        assert len(mock_whatsapp_client.sent_messages) == 2
+        
+        first = mock_whatsapp_client.sent_messages[0]
+        assert first["type"] == "text"
+        assert "*VIGOUR 60A90*" in first["body"]
+        
+        second = mock_whatsapp_client.sent_messages[1]
+        assert second["type"] == "image"
+        assert second["image_url"] == "https://mock.supabase.co/storage/v1/object/public/crop-photos/corn-1.png"
+        assert "*VIGOUR 60A90*" in second["caption"]
+        assert "मक्का की बढ़िया किस्म" in second["caption"]
+        assert "नज़दीकी डीलर" in second["caption"]
+
+
+@pytest.mark.asyncio
+async def test_recommendation_multiple_products_one_image():
+    """
+    Asserts: When recommending multiple products, only ONE image (best/first) is sent,
+    and other product variety names appear in the caption.
+    """
+    phone = "919000004051"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "crop": "Maize"
+        }
+    })
+    mock_whatsapp_client.clear()
+
+    # Seed two products with image_urls
+    in_memory_db.clear_all()
+    in_memory_db.seed_defaults()
+    in_memory_db.tables["products"].extend([
+        {
+            "product_id": "PROD_M2",
+            "variety_name": "VIGOUR 60A90",
+            "crop": "Maize",
+            "key_traits": "Drought tolerant; shelling 84%",
+            "approved_for_recommendation": "Y",
+            "image_url": "https://mock.supabase.co/storage/v1/object/public/crop-photos/corn-1.png"
+        },
+        {
+            "product_id": "PROD_M3",
+            "variety_name": "VIGOUR 30A90",
+            "crop": "Maize",
+            "key_traits": "High yield; stay green",
+            "approved_for_recommendation": "Y",
+            "image_url": "https://mock.supabase.co/storage/v1/object/public/crop-photos/corn-2.png"
+        }
+    ])
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Maize"},
+        {"action": "reply", "message": "मक्के के लिए *VIGOUR 60A90* और *VIGOUR 30A90* दोनों बढ़िया हैं।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(
+            wamid="w_img_2",
+            from_phone=phone,
+            type="text",
+            text="options batao",
+            timestamp="1718563800"
+        ))
+        
+        # We expect: 1 text response, then exactly 1 image response (first product)
+        # Total messages = 2
+        assert len(mock_whatsapp_client.sent_messages) == 2
+        
+        first = mock_whatsapp_client.sent_messages[0]
+        assert first["type"] == "text"
+        
+        second = mock_whatsapp_client.sent_messages[1]
+        assert second["type"] == "image"
+        assert second["image_url"] == "https://mock.supabase.co/storage/v1/object/public/crop-photos/corn-1.png"
+        assert "*VIGOUR 60A90*" in second["caption"]
+        assert "*VIGOUR 30A90*" in second["caption"]  # Listed as other product in the caption!
+
+
+@pytest.mark.asyncio
+async def test_recommendation_no_image_url_text_fallback():
+    """
+    Asserts: Recommending a product that has NO image_url falls back to text-only (no image sent, no crash).
+    """
+    phone = "919000004052"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "crop": "Maize"
+        }
+    })
+    mock_whatsapp_client.clear()
+
+    # Seed product with NO image_url
+    in_memory_db.clear_all()
+    in_memory_db.seed_defaults()
+    in_memory_db.tables["products"].append({
+        "product_id": "PROD_M2",
+        "variety_name": "VIGOUR 60A90",
+        "crop": "Maize",
+        "key_traits": "Drought tolerant",
+        "approved_for_recommendation": "Y",
+        "image_url": None
+    })
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Maize"},
+        {"action": "reply", "message": "किसान भाई, मक्के के लिए आप *VIGOUR 60A90* लगा सकते हैं।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(
+            wamid="w_img_3",
+            from_phone=phone,
+            type="text",
+            text="beej bataye",
+            timestamp="1718563800"
+        ))
+        
+        # We expect only 1 text response, NO image response
+        assert len(mock_whatsapp_client.sent_messages) == 1
+        assert mock_whatsapp_client.sent_messages[0]["type"] == "text"
+
+
+@pytest.mark.asyncio
+async def test_send_image_runtime_failure_text_fallback():
+    """
+    Asserts: If send_image raises a runtime error (e.g. Meta API error or network issue),
+    it logs the error and falls back to sending the recommendation caption as a text message,
+    so the bot never goes silent.
+    """
+    phone = "919000004053"
+    await sessions_repo.delete(phone)
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "greeted": True,
+            "crop": "Maize"
+        }
+    })
+    mock_whatsapp_client.clear()
+
+    # Seed product with image_url
+    in_memory_db.clear_all()
+    in_memory_db.seed_defaults()
+    in_memory_db.tables["products"].append({
+        "product_id": "PROD_M2",
+        "variety_name": "VIGOUR 60A90",
+        "crop": "Maize",
+        "key_traits": "Drought tolerant",
+        "approved_for_recommendation": "Y",
+        "image_url": "https://mock.supabase.co/storage/v1/object/public/crop-photos/corn-1.png"
+    })
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Maize"},
+        {"action": "reply", "message": "किसान भाई, मक्के के लिए आप *VIGOUR 60A90* लगा सकते हैं।"}
+    ])
+
+    # Patch send_image to raise an error
+    async def mock_send_image_error(*args, **kwargs):
+        raise RuntimeError("Meta API is down / media upload failure")
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        with patch.object(mock_whatsapp_client, "send_image", AsyncMock(side_effect=mock_send_image_error)):
+            await conversation_router.route_message(ParsedMessage(
+                wamid="w_img_4",
+                from_phone=phone,
+                type="text",
+                text="beej bataye",
+                timestamp="1718563800"
+            ))
+            
+            # We expect two sent messages: both of type text (first is advice, second is fallback product details)
+            assert len(mock_whatsapp_client.sent_messages) == 2
+            assert mock_whatsapp_client.sent_messages[0]["type"] == "text"
+            assert mock_whatsapp_client.sent_messages[1]["type"] == "text"
+            
+            # Verify the fallback text has the product caption content
+            fallback_body = mock_whatsapp_client.sent_messages[1]["body"]
+            assert "*VIGOUR 60A90*" in fallback_body
+            assert "मक्का की बढ़िया किस्म" in fallback_body
+            assert "डीलर" in fallback_body
+
+
+
 
 
 

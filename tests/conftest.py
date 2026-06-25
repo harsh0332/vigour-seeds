@@ -283,6 +283,10 @@ class MockWhatsAppClient:
         self.sent_messages.append({"to": to, "type": "text", "body": body})
         return {"messages": [{"id": f"msg_{len(self.sent_messages)}"}]}
 
+    async def send_image(self, to: str, image_url: str, caption: str = "") -> dict:
+        self.sent_messages.append({"to": to, "type": "image", "image_url": image_url, "caption": caption})
+        return {"messages": [{"id": f"msg_{len(self.sent_messages)}"}]}
+
     async def send_buttons(self, to: str, body: str, buttons: list) -> dict:
         self.sent_messages.append({"to": to, "type": "buttons", "body": body, "buttons": buttons})
         return {"messages": [{"id": f"msg_{len(self.sent_messages)}"}]}
