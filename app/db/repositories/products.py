@@ -48,4 +48,17 @@ class ProductsRepository:
     async def list_approved_for(self, crop: str, stage: str, problem: str, region: str) -> List[ProductRow]:
         return await asyncio.to_thread(self._list_approved_for, crop, stage, problem, region)
 
+    @staticmethod
+    def _list_approved_crops() -> List[str]:
+        if not supabase_client:
+            return []
+        res = supabase_client.table("products").select("crop").eq("approved_for_recommendation", "Y").execute()
+        if not res.data:
+            return []
+        crops = {row["crop"] for row in res.data if row.get("crop")}
+        return sorted(list(crops))
+
+    async def list_approved_crops(self) -> List[str]:
+        return await asyncio.to_thread(self._list_approved_crops)
+
 products_repo = ProductsRepository()

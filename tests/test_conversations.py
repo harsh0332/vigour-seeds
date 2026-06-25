@@ -1174,4 +1174,276 @@ async def test_generic_fallback_conversational_on_loop_limit():
         assert "कृषि विशेषज्ञ" not in last_msg
 
 
+@pytest.mark.asyncio
+async def test_onboarding_idle_flow_step_by_step():
+    """
+    Asserts: After name collection, if the farmer is idle, they are asked onboarding fields
+    one at a time in order: state/district, total_land, water_source.
+    """
+    phone = "919000003001"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    # 1. Hello -> ask name
+    mock_responses = make_mock_complete_sequence([
+        {"action": "ask", "message": "नमस्ते! आपका नाम क्या है?"}
+    ])
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(wamid="w1", from_phone=phone, type="text", text="Hello", timestamp="1718563800"))
+        assert "आपका नाम क्या है" in mock_whatsapp_client.sent_messages[-1]["body"]
+
+    # Verify session has name = null / Unknown
+    session = await sessions_repo.get(phone)
+    assert not session.collected_json.get("name")
+
+    # 2. Farmer replies "Mera naam Ramesh hai" -> save name, ask state/district
+    mock_responses = make_mock_complete_sequence([
+        {"action": "save_profile", "fields": {"name": "Ramesh"}},
+        {"action": "ask", "message": "धन्यवाद रमेश जी। आप किस राज्य और ज़िले से हैं?"}
+    ])
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(wamid="w2", from_phone=phone, type="text", text="Mera naam Ramesh hai", timestamp="1718563800"))
+        assert "राज्य और ज़िले" in mock_whatsapp_client.sent_messages[-1]["body"]
+
+    # Verify session has name = Ramesh
+    session = await sessions_repo.get(phone)
+    assert session.collected_json.get("name") == "Ramesh"
+    assert not session.collected_json.get("state")
+
+    # 3. Farmer replies "MP" -> save state, ask land
+    mock_responses = make_mock_complete_sequence([
+        {"action": "save_profile", "fields": {"state": "Madhya Pradesh"}},
+        {"action": "ask", "message": "रमेश भाई, आपके पास कुल कितनी ज़मीन है?"}
+    ])
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(wamid="w3", from_phone=phone, type="text", text="MP", timestamp="1718563800"))
+        assert "कुल कितनी ज़मीन" in mock_whatsapp_client.sent_messages[-1]["body"]
+
+    session = await sessions_repo.get(phone)
+    assert session.collected_json.get("state") == "Madhya Pradesh"
+    assert not session.collected_json.get("total_land")
+
+    # 4. Farmer replies "5 acre" -> save land, ask water source
+    mock_responses = make_mock_complete_sequence([
+        {"action": "save_profile", "fields": {"total_land": "5 acre"}},
+        {"action": "ask", "message": "सिंचाई का क्या साधन है?"}
+    ])
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(wamid="w4", from_phone=phone, type="text", text="5 acre", timestamp="1718563800"))
+        assert "सिंचाई" in mock_whatsapp_client.sent_messages[-1]["body"]
+
+    session = await sessions_repo.get(phone)
+    assert session.collected_json.get("total_land") == "5 acre"
+    assert not session.collected_json.get("water_source")
+
+    # 5. Farmer replies "borewell" -> save water source, reply hello/ready
+    mock_responses = make_mock_complete_sequence([
+        {"action": "save_profile", "fields": {"water_source": "borewell"}},
+        {"action": "reply", "message": "धन्यवाद रमेश जी, आपकी पूरी जानकारी सुरक्षित हो गई है। अब बताइए मैं आपकी क्या मदद करूँ?"}
+    ])
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(wamid="w5", from_phone=phone, type="text", text="borewell", timestamp="1718563800"))
+        assert "मदद करूँ" in mock_whatsapp_client.sent_messages[-1]["body"]
+
+    session = await sessions_repo.get(phone)
+    assert session.collected_json.get("water_source") == "borewell"
+
+
+@pytest.mark.asyncio
+async def test_onboarding_request_priority():
+    """
+    Asserts: If the farmer starts with a greeting, but states their name AND a problem,
+    the bot prioritizes the problem/request first (finding products / agronomy advice),
+    rather than asking onboarding fields first.
+    """
+    phone = "919000003002"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    # Farmer replies name and crop/problem
+    # Bot saves name & crop, then immediately calls find_products and replies with product info.
+    mock_responses = make_mock_complete_sequence([
+        {"action": "save_profile", "fields": {"name": "Ramesh", "crop": "Soybean"}},
+        {"action": "find_products", "crop": "Soybean", "problem": "pest_attack"},
+        {"action": "reply", "message": "रमेश भाई, सोयाबीन में कीड़ों के लिए *Vigour 335* बीज अच्छा है। वैसे आप किस राज्य से हैं?"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(wamid="w1", from_phone=phone, type="text", text="Ramesh, meri soybean me keede lag gaye hain beej bataye", timestamp="1718563800"))
+        
+        last_body = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Vigour 335" in last_body
+        assert "किस राज्य" in last_body  # can append onboarding at the end
+
+
+@pytest.mark.parametrize("crop_input, canonical_crop, variety_sample", [
+    ("makka", "Maize", "VIGOUR 60A90"),
+    ("soybean", "Soybean", "Vigour 335"),
+    ("wheat", "Wheat", "Vigour Wheat Sample"),
+    ("tomato", "Tomato", "Vigour Tomato Sample")
+])
+@pytest.mark.asyncio
+async def test_direct_seed_request_immediate_find(crop_input, canonical_crop, variety_sample):
+    """
+    Asserts: Directly asking for seeds triggers find_products immediately without crop stage/problem question.
+    """
+    phone = f"91900000300{ord(canonical_crop[0])}"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    # Seed the product in DB to make sure find_products returns it
+    db_prod = {
+        "product_id": f"PROD_{canonical_crop.upper()}",
+        "variety_name": variety_sample,
+        "crop": canonical_crop,
+        "duration_days": "100",
+        "mrp_inr": 200.0,
+        "key_traits": "High Yield",
+        "pest_disease_tolerance": "Tolerant",
+        "pack_size": "10 kg",
+        "approved_for_recommendation": "Y",
+        "target_region": "MP"
+    }
+    in_memory_db.tables["products"] = [db_prod]
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": canonical_crop, "problem": "-"},
+        {"action": "reply", "message": f"यहाँ {canonical_crop} के लिए *{variety_sample}* बीज उपलब्ध है।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(
+            wamid="w1",
+            from_phone=phone,
+            type="text",
+            text=f"{crop_input} ke beej batao",
+            timestamp="1718563800"
+        ))
+        
+        last_body = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert variety_sample in last_body
+
+
+@pytest.mark.asyncio
+async def test_list_available_crops_action():
+    """
+    Asserts: Asking which crop seeds the company has triggers list_available_crops
+    and replies with a list of crops.
+    """
+    phone = "919000003010"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    # Seed multiple products in DB
+    in_memory_db.tables["products"] = [
+        {"product_id": "P1", "crop": "Maize", "approved_for_recommendation": "Y"},
+        {"product_id": "P2", "crop": "Soybean", "approved_for_recommendation": "Y"},
+        {"product_id": "P3", "crop": "Wheat", "approved_for_recommendation": "Y"},
+        {"product_id": "P4", "crop": "Jowar", "approved_for_recommendation": "N"} # Not approved, should not list
+    ]
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "list_available_crops"},
+        {"action": "reply", "message": "हमारे पास Maize, Soybean, और Wheat के बीज उपलब्ध हैं। आप कौन से बीज चाहते हैं?"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(
+            wamid="w1",
+            from_phone=phone,
+            type="text",
+            text="kon kon si fasal ke beej hain",
+            timestamp="1718563800"
+        ))
+        
+        last_body = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "Maize" in last_body
+        assert "Soybean" in last_body
+        assert "Wheat" in last_body
+        assert "Jowar" not in last_body
+
+
+@pytest.mark.asyncio
+async def test_crop_switch_action():
+    """
+    Asserts: Switch from Soybean to Maize updates crop context and queries Maize seeds,
+    forgetting Soybean.
+    """
+    phone = "919000003011"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    # Pre-set crop Soybean in session
+    await sessions_repo.upsert(phone, {
+        "collected_json": {
+            "name": "Ramesh",
+            "crop": "Soybean"
+        }
+    })
+
+    # Seed Maize product
+    in_memory_db.tables["products"] = [
+        {"product_id": "P1", "variety_name": "VIGOUR 60A90", "crop": "Maize", "approved_for_recommendation": "Y"}
+    ]
+
+    mock_responses = make_mock_complete_sequence([
+        {"action": "find_products", "crop": "Maize", "problem": "-"},
+        {"action": "reply", "message": "मक्के के लिए हमारे पास *VIGOUR 60A90* बीज है।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(
+            wamid="w1",
+            from_phone=phone,
+            type="text",
+            text="ab mujhe makka ka beej chahiye",
+            timestamp="1718563800"
+        ))
+        
+        last_body = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "VIGOUR 60A90" in last_body
+        
+        # Verify crop in session updated to Maize (English name)
+        session = await sessions_repo.get(phone)
+        assert session.collected_json.get("crop") == "Maize"
+
+
+@pytest.mark.asyncio
+async def test_no_product_crop_jowar_action():
+    """
+    Asserts: Asking for Sorghum/Jowar (unsupported) returns honest message and lists available crops.
+    """
+    phone = "919000003012"
+    await sessions_repo.delete(phone)
+    mock_whatsapp_client.clear()
+
+    # Seed other crops
+    in_memory_db.tables["products"] = [
+        {"product_id": "P1", "crop": "Maize", "approved_for_recommendation": "Y"},
+        {"product_id": "P2", "crop": "Soybean", "approved_for_recommendation": "Y"}
+    ]
+
+    # Model should call list_available_crops when asked for Jowar
+    mock_responses = make_mock_complete_sequence([
+        {"action": "list_available_crops"},
+        {"action": "reply", "message": "माफ़ कीजिए, हमारे पास ज्वार का बीज उपलब्ध नहीं है। हमारे पास Maize, Soybean आदि के बीज हैं।"}
+    ])
+
+    with patch.object(mock_ai_provider, "complete", AsyncMock(side_effect=mock_responses)):
+        await conversation_router.route_message(ParsedMessage(
+            wamid="w1",
+            from_phone=phone,
+            type="text",
+            text="jwar ka beej batao",
+            timestamp="1718563800"
+        ))
+        
+        last_body = mock_whatsapp_client.sent_messages[-1]["body"]
+        assert "ज्वार" in last_body or "jwar" in last_body.lower()
+        assert "उपलब्ध नहीं" in last_body
+        assert "Maize" in last_body
+        assert "Soybean" in last_body
+
+
+
 
